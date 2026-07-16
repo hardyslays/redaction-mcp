@@ -1,5 +1,8 @@
-from typing import Literal, list, Annotated
+from typing import Literal, List, Annotated, Final
 from pydantic import BaseModel, Field
+
+
+# region Redaction Target Models ---------------------------------------------
 
 # Create different redaction targets. The possible types are:
 # 1. Bounding box target
@@ -19,7 +22,7 @@ class BoundingBoxTarget(BaseTargetModel):
     """
     Represents bounding box targets for redaction.
     """
-    type: Literal["bounding_box"]
+    type: Literal["bounding_box"] # type: ignore[assignment]
     values: list[BoundingBox]  # List of bounding boxes to redact
 
 class BoundingBox(BaseModel):
@@ -38,7 +41,7 @@ class TextTarget(BaseTargetModel):
     """
     Represents text targets for redaction.
     """
-    type: Literal["text"]
+    type: Literal["text"] # type: ignore[assignment]
     values: list[str]  # List of text strings to redact
     pages: list[int] | None = None
 
@@ -47,7 +50,7 @@ class PolygonTarget(BaseTargetModel):
     """
     Represents polygon targets for redaction.
     """
-    type: Literal["polygon"]
+    type: Literal["polygon"] # type: ignore[assignment]
     values: list[Polygon]  # List of polygons to redact
 
 class Polygon(BaseModel):
@@ -63,7 +66,7 @@ class PageTarget(BaseTargetModel):
     """
     Represents page targets for redaction.
     """
-    type: Literal["page"]
+    type: Literal["page"] # type: ignore[assignment]
     values: list[int]  # List of page numbers to redact
 
 # Regex redaction target model
@@ -71,7 +74,7 @@ class RegexTarget(BaseTargetModel):
     """
     Represents regex targets for redaction.
     """
-    type: Literal["regex"]
+    type: Literal["regex"] # type: ignore[assignment]
     patterns: list[str]  # List of regex patterns to redact
     pages: list[int] | None = None  # Optional list of pages to apply regex on
     ignore_case: bool = True  # Default to ignore case
@@ -81,6 +84,9 @@ class RegexTarget(BaseTargetModel):
 # Universal redaction target model that can represent any type of target
 RedactionTarget = Annotated[BoundingBoxTarget | TextTarget | PolygonTarget | PageTarget | RegexTarget, Field(discriminator="type")]
 
+# endregion ---------------------------------------------
+
+# region Redaction Options and parameters -----------------------------------
 
 # Redaction options model
 class RedactionOptions(BaseModel):
@@ -90,3 +96,5 @@ class RedactionOptions(BaseModel):
     fill_color: str = "#000000"  # Default fill color for redaction
     fill_opacity: float = 1.0  # Default fill opacity for redaction
     permanent_redaction: bool = True  # Default to permanent redaction
+
+#endregion ---------------------------------------------
