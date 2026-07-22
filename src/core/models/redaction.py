@@ -1,100 +1,72 @@
-from typing import Literal, List, Annotated, Final
+"""Pydantic models describing redaction work."""
+
+from typing import Annotated, Literal
+
 from pydantic import BaseModel, Field
 
 
-# region Redaction Target Models ---------------------------------------------
-
-# Create different redaction targets. The possible types are:
-# 1. Bounding box target
-# 2. Text target
-# 3. Polygon target
-# 4. Page target
-# 5. Regex target
-
-class BaseTargetModel(BaseModel):
-    """
-    Base class for redaction targets.
-    """
-    type: str
-
-# Bounding box redaction target model
-class BoundingBoxTarget(BaseTargetModel):
-    """
-    Represents bounding box targets for redaction.
-    """
-    type: Literal["bounding_box"] # type: ignore[assignment]
-    values: list[BoundingBox]  # List of bounding boxes to redact
-
 class BoundingBox(BaseModel):
-    """
-    Represents a bounding box for redaction.
-    """
-    page: int
+    """A rectangular area on a zero-based PDF page."""
+
+    page: int = Field(ge=0)
     x: float
     y: float
-    width: float
-    height: float
-    units: Literal["pixels", "inches", "normalized"] = "normalized"  # Default to normalized
+    width: float = Field(gt=0)
+    height: float = Field(gt=0)
+    units: Literal["pixels", "inches", "normalized"] = "normalized"
 
-# Text redaction target model
-class TextTarget(BaseTargetModel):
-    """
-    Represents text targets for redaction.
-    """
-    type: Literal["text"] # type: ignore[assignment]
-    values: list[str]  # List of text strings to redact
-    pages: list[int] | None = None
-
-# Polygon redaction target model
-class PolygonTarget(BaseTargetModel):
-    """
-    Represents polygon targets for redaction.
-    """
-    type: Literal["polygon"] # type: ignore[assignment]
-    values: list[Polygon]  # List of polygons to redact
-
-class Polygon(BaseModel):
-    page: int
-    points: list[Point]
 
 class Point(BaseModel):
     x: float
     y: float
 
-# Page redaction target model
+
+class Polygon(BaseModel):
+    page: int = Field(ge=0)
+    points: list[Point] = Field(min_length=3)
+
+
+class BaseTargetModel(BaseModel):
+    type: str
+
+
+class BoundingBoxTarget(BaseTargetModel):
+    type: Literal["bounding_box"]
+    values: list[BoundingBox] = Field(min_length=1)
+
+
+class TextTarget(BaseTargetModel):
+    type: Literal["text"]
+    values: list[str] = Field(min_length=1)
+    pages: list[int] | None = None
+
+
+class PolygonTarget(BaseTargetModel):
+    type: Literal["polygon"]
+    values: list[Polygon] = Field(min_length=1)
+
+
 class PageTarget(BaseTargetModel):
-    """
-    Represents page targets for redaction.
-    """
-    type: Literal["page"] # type: ignore[assignment]
-    values: list[int]  # List of page numbers to redact
+    type: Literal["page"]
+    values: list[int] = Field(min_length=1)
 
-# Regex redaction target model
+
 class RegexTarget(BaseTargetModel):
-    """
-    Represents regex targets for redaction.
-    """
-    type: Literal["regex"] # type: ignore[assignment]
-    patterns: list[str]  # List of regex patterns to redact
-    pages: list[int] | None = None  # Optional list of pages to apply regex on
-    ignore_case: bool = True  # Default to ignore case
-    only_first_match: bool = False  # Default to not only first match
-    allow_unicode: bool = False # Default to allow unicode characters in regex
+    type: Literal["regex"]
+    patterns: list[str] = Field(min_length=1)
+    pages: list[int] | None = None
+    ignore_case: bool = True
+    only_first_match: bool = False
+    allow_unicode: bool = False
 
-# Universal redaction target model that can represent any type of target
-RedactionTarget = Annotated[BoundingBoxTarget | TextTarget | PolygonTarget | PageTarget | RegexTarget, Field(discriminator="type")]
 
-# endregion ---------------------------------------------
+RedactionTarget = Annotated[
+    BoundingBoxTarget | TextTarget | PolygonTarget | PageTarget | RegexTarget,
+    Field(discriminator="type"),
+]
 
-# region Redaction Options and parameters -----------------------------------
 
-# Redaction options model
 class RedactionOptions(BaseModel):
-    """
-    Represents options for the redaction process.
-    """
-    fill_color: str = "#000000"  # Default fill color for redaction
-    fill_opacity: float = 1.0  # Default fill opacity for redaction
-    permanent_redaction: bool = True  # Default to permanent redaction
-
-#endregion ---------------------------------------------
+    fill_color: str = "#000000"
+    fill_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
+    permanent_redaction: bool = True

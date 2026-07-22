@@ -1,14 +1,14 @@
-from typing import Optional, Final
+from typing import Literal
 from pydantic import BaseModel
 
 class GenericErrorModel(BaseModel):
-    status: Final[str] = "error"
+    status: Literal["error"] = "error"
     type: str
     message: str
-    trace: Optional[str] = None
+    trace: str | None = None
 
 class RedactionError(GenericErrorModel):
     """
     Represents error model for Redaction error
     """
-    type: Final[str] = "RedactionError" # type: ignore[assignment]
+    type: Literal["RedactionError"] = "RedactionError"
