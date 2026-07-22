@@ -20,11 +20,11 @@ Here is a rough roadmap of the project:
 - [x] Implementation of Core Redaction service
 - [x] Exposure of the services as a Fast API server (for testing)
 - [x] MCP server implementation in STDIO mode
-- [x] MCP server implementation in SSE/HTTP mode
-- [] DOCX doc redaction engine implementation
-- [] PPT doc redaction engine implementation
-- [] TIFF doc redaction engine implementation
-- [] Implementation of Core dat replecement service
+- [x] MCP server implementation in HTTP mode
+- [ ] DOCX doc redaction engine implementation
+- [ ] PPT doc redaction engine implementation
+- [ ] TIFF doc redaction engine implementation
+- [ ] Implementation of Core dat replecement service
 
 
 ## Requirements
