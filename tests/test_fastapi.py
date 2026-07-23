@@ -55,3 +55,16 @@ def test_redact_rejects_non_base64_document_data() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_redact_rejects_polygon_target() -> None:
+    response = request(
+        "POST",
+        "/redact",
+        json={
+            "document": {"base64data": base64.b64encode(sample_pdf()).decode()},
+            "targets": [{"type": "polygon", "values": []}],
+        },
+    )
+
+    assert response.status_code == 422

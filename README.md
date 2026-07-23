@@ -21,8 +21,8 @@ Here is a rough roadmap of the project:
 - [x] Exposure of the services as a Fast API server (for testing)
 - [x] MCP server implementation in STDIO mode
 - [x] MCP server implementation in HTTP mode
-- [ ] DOCX doc redaction engine implementation
-- [ ] PPT doc redaction engine implementation
+- [x] DOCX doc redaction engine implementation
+- [x] PPT doc redaction engine implementation
 - [ ] TIFF doc redaction engine implementation
 - [ ] Implementation of Core dat replecement service
 
@@ -63,7 +63,7 @@ Endpoints:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check, returning `{"status":"ok"}`. |
-| `POST` | `/redact` | Redact a PDF and return the result as base64. |
+| `POST` | `/redact` | Redact a PDF, DOCX, or PPTX file and return the result as base64. |
 
 ### MCP over STDIO
 
@@ -123,8 +123,11 @@ Optional document metadata:
 }
 ```
 
+Supported MIME types are `application/pdf`,
+`application/vnd.openxmlformats-officedocument.wordprocessingml.document`, and
+`application/vnd.openxmlformats-officedocument.presentationml.presentation`.
 The response contains `filename`, `mime_type`, and `base64data`. Decode the
-last field to retrieve the redacted PDF.
+last field to retrieve the redacted file.
 
 ## FastAPI examples
 
@@ -197,6 +200,12 @@ Regular expressions are evaluated against extracted words, so each match
 redacts the matching word's rectangle. Cross-word or multi-line expressions
 are not currently supported.
 
+For DOCX, text and regex redactions replace matching text in paragraphs,
+tables, headers, and footers. DOCX does not support page-restricted or
+bounding-box targets because pagination is determined by the document renderer.
+For PPTX, text and regex redactions apply to slide text frames; page and
+bounding-box targets add a cover shape on the selected slide area.
+
 ### Bounding boxes
 
 ```json
@@ -217,20 +226,9 @@ are not currently supported.
 are converted to PDF points (72 points per inch); `pixels` are used directly
 as PDF points.
 
-### Polygons and pages
+### Pages
 
-```json
-{
-  "type": "polygon",
-  "values": [{
-    "page": 0,
-    "points": [{"x": 72, "y": 72}, {"x": 180, "y": 72}, {"x": 72, "y": 120}]
-  }]
-}
-```
-
-Polygon points currently produce a redaction over the polygon's enclosing
-rectangle. For a whole page, use:
+For a whole page, use:
 
 ```json
 {"type": "page", "values": [0, 3]}
@@ -242,10 +240,15 @@ rectangle. For a whole page, use:
 {
   "fill_color": "#000000",
   "fill_opacity": 1.0,
-  "permanent_redaction": true
+  "permanent_redaction": true,
+  "redaction_type": "asterisks"
 }
 ```
 
+For DOCX and PPTX text redaction, `redaction_type` controls the replacement:
+`asterisks` (the default) replaces each character with `*`, while `mask`
+replaces each match with `[REDACT]`. PDF redactions continue to use their
+existing black-box behavior.
 `fill_color` must be a six-digit hexadecimal color. With
 `permanent_redaction: true` (the default), redaction annotations are applied,
 removing content in the redacted areas from the output PDF. Set it to `false`
@@ -261,6 +264,8 @@ FastAPI / MCP STDIO / MCP HTTP
               |
               v
     src.core.engines.pdf_redaction (PyMuPDF)
+    src.core.engines.docx_redaction (python-docx)
+    src.core.engines.pptx_redaction (python-pptx)
 ```
 
 Transport layers share `RedactionRequest` and `RedactionResponse`; the core

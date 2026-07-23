@@ -13,7 +13,6 @@ from src.core.models.redaction import (
     BoundingBox,
     BoundingBoxTarget,
     PageTarget,
-    PolygonTarget,
     RedactionOptions,
     RedactionTarget,
     RegexTarget,
@@ -70,11 +69,6 @@ def redact_pdf_document(document: Document, targets: list[RedactionTarget], opti
                     for text in target.values:
                         for rect in page.search_for(text):
                             _add(page, rect, color, options)
-            elif isinstance(target, PolygonTarget):
-                for polygon in target.values:
-                    page = _page(pdf, polygon.page)
-                    xs, ys = [point.x for point in polygon.points], [point.y for point in polygon.points]
-                    _add(page, fitz.Rect(min(xs), min(ys), max(xs), max(ys)), color, options)
             elif isinstance(target, PageTarget):
                 for page_number in target.values:
                     page = _page(pdf, page_number)

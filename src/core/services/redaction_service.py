@@ -3,11 +3,13 @@
 import base64
 from urllib.request import urlopen
 
+from src.core.engines.docx_redaction import redact_docx_document
 from src.core.engines.pdf_redaction import redact_pdf_document
+from src.core.engines.pptx_redaction import redact_pptx_document
 from src.core.models.document import Document, SourceType
 from src.core.models.errors import RedactionError
 from src.core.models.redaction import RedactionOptions, RedactionTarget
-from src.core.services.mime_detection import detect_mime_type
+from src.core.services.mime_detection import DOCX_MIME_TYPE, PDF_MIME_TYPE, PPTX_MIME_TYPE, detect_mime_type
 
 
 def _document_bytes(document: Document) -> bytes:
@@ -17,7 +19,7 @@ def _document_bytes(document: Document) -> bytes:
     if source.type is SourceType.PATH:
         with open(source.value, "rb") as file:  # type: ignore[arg-type]
             return file.read()
-    with urlopen(source.value, timeout=30) as response:  # nosec B310 - caller supplied document URL
+    with urlopen(source.value, timeout=30) as response:  # if caller supplied document URL
         return response.read()
 
 
@@ -33,14 +35,19 @@ def redact_document(
     try:
         data = _document_bytes(document)
         mime_type = document.mime_type or detect_mime_type(data, document.filename)
-        if mime_type != "application/pdf":
-            return RedactionError(message="Only PDF documents are currently supported")
+        if mime_type not in (PDF_MIME_TYPE, DOCX_MIME_TYPE, PPTX_MIME_TYPE):
+            return RedactionError(message="Only PDF, DOCX, and PPTX documents are currently supported")
+
         normalized = document.model_copy(update={
             "base64data": base64.b64encode(data).decode("ascii"),
             "path": None,
             "url": None,
             "mime_type": mime_type,
         })
-        return redact_pdf_document(normalized, targets, options)
+        if mime_type == PDF_MIME_TYPE:
+            return redact_pdf_document(normalized, targets, options)
+        if mime_type == DOCX_MIME_TYPE:
+            return redact_docx_document(normalized, targets, options)
+        return redact_pptx_document(normalized, targets, options)
     except Exception as exc:
         return RedactionError(message=str(exc))

@@ -16,16 +16,6 @@ class BoundingBox(BaseModel):
     units: Literal["pixels", "inches", "normalized"] = "normalized"
 
 
-class Point(BaseModel):
-    x: float
-    y: float
-
-
-class Polygon(BaseModel):
-    page: int = Field(ge=0)
-    points: list[Point] = Field(min_length=3)
-
-
 class BaseTargetModel(BaseModel):
     type: str
 
@@ -39,11 +29,6 @@ class TextTarget(BaseTargetModel):
     type: Literal["text"]
     values: list[str] = Field(min_length=1)
     pages: list[int] | None = None
-
-
-class PolygonTarget(BaseTargetModel):
-    type: Literal["polygon"]
-    values: list[Polygon] = Field(min_length=1)
 
 
 class PageTarget(BaseTargetModel):
@@ -61,7 +46,7 @@ class RegexTarget(BaseTargetModel):
 
 
 RedactionTarget = Annotated[
-    BoundingBoxTarget | TextTarget | PolygonTarget | PageTarget | RegexTarget,
+    BoundingBoxTarget | TextTarget | PageTarget | RegexTarget,
     Field(discriminator="type"),
 ]
 
@@ -70,3 +55,4 @@ class RedactionOptions(BaseModel):
     fill_color: str = "#000000"
     fill_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     permanent_redaction: bool = True
+    redaction_type: Literal["mask", "asterisks"] = "asterisks"
