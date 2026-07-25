@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from src.core.models.errors import RedactionError
+from src.core.models.errors import RedactionError, ReplacementError
 from src.core.services.redaction_service import redact_document
-from src.server.models import RedactionRequest, RedactionResponse
+from src.core.services.replacement_service import replace_document
+from src.server.models import RedactionRequest, RedactionResponse, ReplacementRequest, ReplacementResponse
 
 try:
     from fastmcp import FastMCP
@@ -25,6 +26,15 @@ def redact(request: RedactionRequest) -> RedactionResponse:
     if isinstance(result, RedactionError):
         raise ValueError(result.message)
     return RedactionResponse.from_document(result)
+
+
+@redaction_mcp.tool()
+def replace(request: ReplacementRequest) -> ReplacementResponse:
+    """Permanently replace selected PDF text with safe dummy text."""
+    result = replace_document(request.document, request.targets)
+    if isinstance(result, ReplacementError):
+        raise ValueError(result.message)
+    return ReplacementResponse.from_document(result)
 
 
 def create_mcp_app():

@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 
 from src.core.models.document import Document
 from src.core.models.redaction import RedactionOptions, RedactionTarget
+from src.core.models.replacement import ReplacementTarget
 
 
 class RedactionRequest(BaseModel):
@@ -22,6 +23,23 @@ class RedactionResponse(BaseModel):
             raise ValueError("Redaction output did not include base64data")
         return cls(
             filename=document.filename or "redacted.pdf",
+            mime_type=document.mime_type or "application/octet-stream",
+            base64data=document.base64data,
+        )
+
+
+class ReplacementRequest(BaseModel):
+    document: Document
+    targets: list[ReplacementTarget] = Field(min_length=1)
+
+
+class ReplacementResponse(RedactionResponse):
+    @classmethod
+    def from_document(cls, document: Document) -> "ReplacementResponse":
+        if document.base64data is None:
+            raise ValueError("Replacement output did not include base64data")
+        return cls(
+            filename=document.filename or "replaced.pdf",
             mime_type=document.mime_type or "application/octet-stream",
             base64data=document.base64data,
         )

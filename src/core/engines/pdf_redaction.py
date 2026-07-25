@@ -13,7 +13,6 @@ from src.core.models.redaction import (
     BoundingBox,
     BoundingBoxTarget,
     PageTarget,
-    PolygonTarget,
     RedactionOptions,
     RedactionTarget,
     RegexTarget,
@@ -53,12 +52,77 @@ def _pages(pdf: fitz.Document, selection: list[int] | None) -> list[fitz.Page]:
     return [_page(pdf, page_number) for page_number in (selection if selection is not None else range(pdf.page_count))]
 
 
-def redact_pdf_document(document: Document, targets: list[RedactionTarget], options: RedactionOptions) -> Document:
+def _text_index(page: fitz.Page) -> tuple[str, list[tuple[int, fitz.Rect] | None]]:
+    """Return extracted text with a rectangle for every renderable character.
+
+    Raw character boxes let regex redaction cover the matched span itself, rather
+    than the entire extracted word. Newlines are retained so multiline patterns
+    can match, but have no rectangle of their own.
+    """
+    text: list[str] = []
+    positions: list[tuple[int, fitz.Rect] | None] = []
+    line_number = 0
+    for block in page.get_text("rawdict")["blocks"]:
+        for line in block.get("lines", []):
+            for span in line["spans"]:
+                for char in span.get("chars", []):
+                    text.append(char["c"])
+                    positions.append((line_number, fitz.Rect(char["bbox"])))
+            text.append("\n")
+            positions.append(None)
+            line_number += 1
+    return "".join(text), positions
+
+
+def _match_rectangles(match: re.Match[str], positions: list[tuple[int, fitz.Rect] | None]) -> list[fitz.Rect]:
+    """Merge adjacent matched characters on each line into minimal redactions."""
+    rectangles: list[fitz.Rect] = []
+    current_line: int | None = None
+    current: fitz.Rect | None = None
+    for position in positions[match.start():match.end()]:
+        if position is None:
+            if current is not None:
+                rectangles.append(current)
+                current = None
+                current_line = None
+            continue
+        line, rect = position
+        if current is None or line != current_line:
+            if current is not None:
+                rectangles.append(current)
+            current_line, current = line, fitz.Rect(rect)
+        else:
+            current.include_rect(rect)
+    if current is not None:
+        rectangles.append(current)
+    return rectangles
+
+
+def _add_pattern_matches(
+    page: fitz.Page, text: str, pattern: re.Pattern[str], positions: list[tuple[int, fitz.Rect] | None], color: tuple[float, float, float],
+    options: RedactionOptions, only_first: bool = False,
+) -> bool:
+    """Add exact-span redactions and return whether at least one match was found."""
+    found = False
+    for match in pattern.finditer(text):
+        if match.start() == match.end():
+            continue
+        for rect in _match_rectangles(match, positions):
+            _add(page, rect, color, options)
+        found = True
+        if only_first:
+            return True
+    return found
+
+
+def redact_pdf_document(
+    document: Document, targets: list[RedactionTarget], options: RedactionOptions, *, data: bytes | None = None
+) -> Document:
     """Apply all targets in one pass so permanent redactions are applied safely."""
-    if document.base64data is None:
+    if data is None and document.base64data is None:
         raise ValueError("PDF engine requires in-memory document base64data")
     color = _color(options.fill_color)
-    pdf = fitz.open(stream=document.decoded_bytes(), filetype="pdf")
+    pdf = fitz.open(stream=data if data is not None else document.decoded_bytes(), filetype="pdf")
     try:
         for target in targets:
             if isinstance(target, BoundingBoxTarget):
@@ -66,15 +130,10 @@ def redact_pdf_document(document: Document, targets: list[RedactionTarget], opti
                     page = _page(pdf, box.page)
                     _add(page, _rect(page, box), color, options)
             elif isinstance(target, TextTarget):
+                pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)))
                 for page in _pages(pdf, target.pages):
-                    for text in target.values:
-                        for rect in page.search_for(text):
-                            _add(page, rect, color, options)
-            elif isinstance(target, PolygonTarget):
-                for polygon in target.values:
-                    page = _page(pdf, polygon.page)
-                    xs, ys = [point.x for point in polygon.points], [point.y for point in polygon.points]
-                    _add(page, fitz.Rect(min(xs), min(ys), max(xs), max(ys)), color, options)
+                    text, positions = _text_index(page)
+                    _add_pattern_matches(page, text, pattern, positions, color, options)
             elif isinstance(target, PageTarget):
                 for page_number in target.values:
                     page = _page(pdf, page_number)
@@ -84,14 +143,16 @@ def redact_pdf_document(document: Document, targets: list[RedactionTarget], opti
                 if not target.allow_unicode:
                     flags |= re.ASCII
                 patterns = [re.compile(pattern, flags) for pattern in target.patterns]
+                matched = False
                 for page in _pages(pdf, target.pages):
-                    matches = 0
-                    for x0, y0, x1, y1, word, *_ in page.get_text("words"):
-                        if any(pattern.search(word) for pattern in patterns):
-                            _add(page, fitz.Rect(x0, y0, x1, y1), color, options)
-                            matches += 1
-                            if target.only_first_match and matches == 1:
+                    text, positions = _text_index(page)
+                    for pattern in patterns:
+                        if _add_pattern_matches(page, text, pattern, positions, color, options, target.only_first_match):
+                            matched = True
+                            if target.only_first_match:
                                 break
+                    if matched and target.only_first_match:
+                        break
         if options.permanent_redaction:
             for page in pdf:
                 page.apply_redactions()

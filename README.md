@@ -21,10 +21,12 @@ Here is a rough roadmap of the project:
 - [x] Exposure of the services as a Fast API server (for testing)
 - [x] MCP server implementation in STDIO mode
 - [x] MCP server implementation in HTTP mode
-- [ ] DOCX doc redaction engine implementation
-- [ ] PPT doc redaction engine implementation
-- [ ] TIFF doc redaction engine implementation
-- [ ] Implementation of Core dat replecement service
+- [x] DOCX doc redaction engine implementation
+- [x] PPT doc redaction engine implementation
+- [x] Implementation of Core data replecement service
+- [ ] Test the redaction and data replacement service for inconsistencies
+- [ ] Improve redaction on edge cases - Multi-line redactions, optimizations on findings, etc.
+- [ ] Improve data replacement on edge cases - Inline replacement, multi-line replacement, optmization of implementation, etc.
 
 
 ## Requirements
@@ -217,20 +219,9 @@ are not currently supported.
 are converted to PDF points (72 points per inch); `pixels` are used directly
 as PDF points.
 
-### Polygons and pages
+### Pages
 
-```json
-{
-  "type": "polygon",
-  "values": [{
-    "page": 0,
-    "points": [{"x": 72, "y": 72}, {"x": 180, "y": 72}, {"x": 72, "y": 120}]
-  }]
-}
-```
-
-Polygon points currently produce a redaction over the polygon's enclosing
-rectangle. For a whole page, use:
+For a whole page, use:
 
 ```json
 {"type": "page", "values": [0, 3]}

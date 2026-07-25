@@ -55,3 +55,32 @@ def test_redact_rejects_non_base64_document_data() -> None:
     )
 
     assert response.status_code == 422
+
+
+def test_redact_rejects_polygon_target() -> None:
+    response = request(
+        "POST",
+        "/redact",
+        json={
+            "document": {"base64data": base64.b64encode(sample_pdf()).decode()},
+            "targets": [{"type": "polygon", "values": []}],
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_replace_accepts_base64_pdf_and_returns_replaced_pdf() -> None:
+    payload = {
+        "document": {"base64data": base64.b64encode(sample_pdf()).decode(), "filename": "input.pdf"},
+        "targets": [{"type": "text", "values": ["secret"], "replacement_type": "STATIC", "static_text": "SAFE"}],
+    }
+    response = request("POST", "/replace", json=payload)
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["filename"] == "input-replaced.pdf"
+    result = fitz.open(stream=base64.b64decode(body["base64data"]), filetype="pdf")
+    assert "secret" not in result[0].get_text()
+    assert "[SAFE]" in result[0].get_text()
+    result.close()
