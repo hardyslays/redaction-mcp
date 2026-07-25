@@ -12,3 +12,9 @@ class RedactionError(GenericErrorModel):
     Represents error model for Redaction error
     """
     type: Literal["RedactionError"] = "RedactionError"
+
+
+class ReplacementError(GenericErrorModel):
+    """Represents an error raised while replacing document data."""
+
+    type: Literal["ReplacementError"] = "ReplacementError"

@@ -1,5 +1,5 @@
 import base64
-from pydantic import BaseModel, ConfigDict, model_validator
+from pydantic import BaseModel, ConfigDict, PrivateAttr, model_validator
 from enum import Enum
 
 # Define the source types possible for document
@@ -29,6 +29,7 @@ class Document(BaseModel):
 
     mime_type: str | None = None
     filename: str | None = None
+    _decoded_base64: bytes | None = PrivateAttr(default=None)
 
     @model_validator(mode="after")
     def validate_single_source(self):
@@ -37,7 +38,9 @@ class Document(BaseModel):
             raise ValueError("Exactly one of path, url, or base64data must be provided")
         if self.base64data is not None:
             try:
-                base64.b64decode(self.base64data, validate=True)
+                # Keep the validated payload so request validation does not require a
+                # second complete Base64 decode before an engine can consume it.
+                self._decoded_base64 = base64.b64decode(self.base64data, validate=True)
             except ValueError as exc:
                 raise ValueError("base64data must be valid base64") from exc
         return self
@@ -56,4 +59,6 @@ class Document(BaseModel):
         """Decode the in-memory base64 payload."""
         if self.base64data is None:
             raise ValueError("Document does not contain base64data")
-        return base64.b64decode(self.base64data, validate=True)
+        if self._decoded_base64 is None:
+            self._decoded_base64 = base64.b64decode(self.base64data, validate=True)
+        return self._decoded_base64

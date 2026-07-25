@@ -1,6 +1,5 @@
 """Transport-independent document redaction service."""
 
-import base64
 from urllib.request import urlopen
 
 from src.core.engines.docx_redaction import redact_docx_document
@@ -38,16 +37,10 @@ def redact_document(
         if mime_type not in (PDF_MIME_TYPE, DOCX_MIME_TYPE, PPTX_MIME_TYPE):
             return RedactionError(message="Only PDF, DOCX, and PPTX documents are currently supported")
 
-        normalized = document.model_copy(update={
-            "base64data": base64.b64encode(data).decode("ascii"),
-            "path": None,
-            "url": None,
-            "mime_type": mime_type,
-        })
         if mime_type == PDF_MIME_TYPE:
-            return redact_pdf_document(normalized, targets, options)
+            return redact_pdf_document(document, targets, options, data=data)
         if mime_type == DOCX_MIME_TYPE:
-            return redact_docx_document(normalized, targets, options)
-        return redact_pptx_document(normalized, targets, options)
+            return redact_docx_document(document, targets, options, data=data)
+        return redact_pptx_document(document, targets, options, data=data)
     except Exception as exc:
         return RedactionError(message=str(exc))

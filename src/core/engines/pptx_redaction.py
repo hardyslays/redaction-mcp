@@ -8,8 +8,7 @@ from io import BytesIO
 from pathlib import Path
 
 from pptx import Presentation
-from pptx.dml.color import RGBColor
-from pptx.enum.shapes import MSO_SHAPE, MSO_SHAPE_TYPE
+from pptx.enum.shapes import MSO_SHAPE_TYPE
 
 from src.core.models.document import Document
 from src.core.models.redaction import (
@@ -56,20 +55,6 @@ def _slides(presentation: Presentation, selection: list[int] | None) -> list[obj
     return slides
 
 
-def _color(hex_color: str) -> RGBColor:
-    value = hex_color.lstrip("#")
-    if len(value) != 6 or any(char not in "0123456789abcdefABCDEF" for char in value):
-        raise ValueError("fill_color must be a six-digit hex colour, e.g. #000000")
-    return RGBColor.from_string(value)
-
-
-def _add_cover(slide: object, x: int, y: int, width: int, height: int, color: RGBColor) -> None:
-    shape = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, x, y, width, height)
-    shape.fill.solid()
-    shape.fill.fore_color.rgb = color
-    shape.line.fill.background()
-
-
 def _box(box: BoundingBox, presentation: Presentation) -> tuple[int, int, int, int]:
     if box.units == "normalized":
         return (
@@ -80,26 +65,63 @@ def _box(box: BoundingBox, presentation: Presentation) -> tuple[int, int, int, i
     return int(box.x * scale), int(box.y * scale), int(box.width * scale), int(box.height * scale)
 
 
-def redact_pptx_document(document: Document, targets: list[RedactionTarget], options: RedactionOptions) -> Document:
-    """Apply text redactions and visual covers to a PPTX package."""
-    if document.base64data is None:
+def _remove_shape(shape: object) -> None:
+    element = shape._element  # type: ignore[attr-defined]
+    element.getparent().remove(element)
+
+
+def _intersects(shape: object, box: tuple[int, int, int, int]) -> bool:
+    x, y, width, height = box
+    left, top = shape.left, shape.top  # type: ignore[attr-defined]
+    right, bottom = left + shape.width, top + shape.height  # type: ignore[attr-defined]
+    return not (
+        right <= x
+        or x + width <= left
+        or bottom <= y
+        or y + height <= top
+    )
+
+
+def _remove_shapes_in_box(slide: object, box: tuple[int, int, int, int]) -> None:
+    # Removing a whole intersecting shape is deliberately conservative: leaving
+    # any part of its XML behind would make a bounding-box redaction reversible.
+    for shape in list(slide.shapes):
+        if _intersects(shape, box):
+            _remove_shape(shape)
+
+
+def _remove_all_shapes(slide: object) -> None:
+    for shape in list(slide.shapes):
+        _remove_shape(shape)
+
+
+def redact_pptx_document(
+    document: Document, targets: list[RedactionTarget], options: RedactionOptions, *, data: bytes | None = None
+) -> Document:
+    """Apply text redactions and permanently remove shapes selected by area/page."""
+    if data is None and document.base64data is None:
         raise ValueError("PPTX engine requires in-memory document base64data")
-    presentation = Presentation(BytesIO(document.decoded_bytes()))
-    color = _color(options.fill_color)
+    presentation = Presentation(BytesIO(data if data is not None else document.decoded_bytes()))
+    frames_by_slide = {index: _text_frames(slide.shapes) for index, slide in enumerate(presentation.slides)}
     for target in targets:
         if isinstance(target, TextTarget):
-            for slide in _slides(presentation, target.pages):
-                for value in target.values:
-                    pattern = re.compile(re.escape(value))
-                    for frame in _text_frames(slide.shapes):
-                        _replace(frame, pattern, options)
+            pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)))
+            selection = target.pages if target.pages is not None else range(len(presentation.slides))
+            for index in selection:
+                if not 0 <= index < len(presentation.slides):
+                    raise ValueError(f"Slide {index} is out of range (presentation has {len(presentation.slides)} slides)")
+                for frame in frames_by_slide[index]:
+                    _replace(frame, pattern, options)
         elif isinstance(target, RegexTarget):
             flags = re.IGNORECASE if target.ignore_case else 0
             if not target.allow_unicode:
                 flags |= re.ASCII
-            for slide in _slides(presentation, target.pages):
-                frames = _text_frames(slide.shapes)
-                matched = False
+            matched = False
+            selection = target.pages if target.pages is not None else range(len(presentation.slides))
+            for index in selection:
+                if not 0 <= index < len(presentation.slides):
+                    raise ValueError(f"Slide {index} is out of range (presentation has {len(presentation.slides)} slides)")
+                frames = frames_by_slide[index]
                 for pattern in (re.compile(value, flags) for value in target.patterns):
                     for frame in frames:
                         replaced = _replace(frame, pattern, options, limit=1 if target.only_first_match else 0)
@@ -111,10 +133,10 @@ def redact_pptx_document(document: Document, targets: list[RedactionTarget], opt
         elif isinstance(target, BoundingBoxTarget):
             for box in target.values:
                 slide = _slides(presentation, [box.page])[0]
-                _add_cover(slide, *_box(box, presentation), color)
+                _remove_shapes_in_box(slide, _box(box, presentation))
         elif isinstance(target, PageTarget):
             for slide in _slides(presentation, target.values):
-                _add_cover(slide, 0, 0, presentation.slide_width, presentation.slide_height, color)
+                _remove_all_shapes(slide)
     output = BytesIO()
     presentation.save(output)
     filename = Path(document.filename or "document.pptx")

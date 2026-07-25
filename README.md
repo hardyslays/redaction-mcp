@@ -64,6 +64,7 @@ Endpoints:
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check, returning `{"status":"ok"}`. |
 | `POST` | `/redact` | Redact a PDF, DOCX, or PPTX file and return the result as base64. |
+| `POST` | `/replace` | Permanently replace selected PDF, DOCX, or PPTX text with safe dummy data. |
 
 ### MCP over STDIO
 
@@ -128,6 +129,36 @@ Supported MIME types are `application/pdf`,
 `application/vnd.openxmlformats-officedocument.presentationml.presentation`.
 The response contains `filename`, `mime_type`, and `base64data`. Decode the
 last field to retrieve the redacted file.
+
+## Data replacement
+
+`POST /replace` and the MCP `replace` tool support PDF, DOCX, and PPTX text
+targets. Every matched source phrase is permanently removed before its
+replacement is inserted in the source text's context. Targets support these
+replacement strategies:
+
+- `PARTIAL`: masks non-whitespace characters and retains the last four visible
+  characters for values longer than eight characters, otherwise the last two.
+- `STATIC`: inserts `static_text` surrounded by square brackets.
+- `REGEX`: generates deterministic dummy characters with the same letter,
+  digit, whitespace, and punctuation pattern as the source.
+
+```json
+{
+  "document": {"base64data": "...", "filename": "contract.pdf"},
+  "targets": [{
+    "type": "text",
+    "values": ["Jane Doe"],
+    "replacement_type": "STATIC",
+    "static_text": "REDACTED"
+  }]
+}
+```
+
+`pages` may restrict a text target to zero-based PDF pages or PPTX slides.
+DOCX does not support page filtering because pagination is renderer-dependent.
+PDF replacement text is first fitted inside the removed text rectangle; if it
+cannot fit, it is inserted at a reduced size at that location.
 
 ## FastAPI examples
 
@@ -203,8 +234,10 @@ are not currently supported.
 For DOCX, text and regex redactions replace matching text in paragraphs,
 tables, headers, and footers. DOCX does not support page-restricted or
 bounding-box targets because pagination is determined by the document renderer.
-For PPTX, text and regex redactions apply to slide text frames; page and
-bounding-box targets add a cover shape on the selected slide area.
+For PPTX, text and regex redactions apply to slide text frames. Page targets
+remove all shapes on the selected slide, while bounding-box targets permanently
+remove every shape that intersects the selected area. This conservative behavior
+prevents the source XML from remaining recoverable.
 
 ### Bounding boxes
 

@@ -58,10 +58,10 @@ def _replace(paragraph: Paragraph, pattern: re.Pattern[str], options: RedactionO
 
 
 def _redact_text(paragraphs: list[Paragraph], values: list[str], options: RedactionOptions) -> None:
-    for value in values:
-        pattern = re.compile(re.escape(value))
-        for paragraph in paragraphs:
-            _replace(paragraph, pattern, options)
+    """Compile once and visit each paragraph once for a text target."""
+    pattern = re.compile("|".join(re.escape(value) for value in sorted(values, key=len, reverse=True)))
+    for paragraph in paragraphs:
+        _replace(paragraph, pattern, options)
 
 
 def _redact_regex(paragraphs: list[Paragraph], target: RegexTarget, options: RedactionOptions) -> None:
@@ -76,11 +76,13 @@ def _redact_regex(paragraphs: list[Paragraph], target: RegexTarget, options: Red
                 return
 
 
-def redact_docx_document(document: Document, targets: list[RedactionTarget], options: RedactionOptions) -> Document:
+def redact_docx_document(
+    document: Document, targets: list[RedactionTarget], options: RedactionOptions, *, data: bytes | None = None
+) -> Document:
     """Apply text and regular-expression redactions to a DOCX package."""
-    if document.base64data is None:
+    if data is None and document.base64data is None:
         raise ValueError("DOCX engine requires in-memory document base64data")
-    source = DocxDocument(BytesIO(document.decoded_bytes()))
+    source = DocxDocument(BytesIO(data if data is not None else document.decoded_bytes()))
     paragraphs = _paragraphs(source)
     for target in targets:
         if isinstance(target, TextTarget):

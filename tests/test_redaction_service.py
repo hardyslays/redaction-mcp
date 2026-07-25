@@ -138,7 +138,7 @@ def test_mask_redaction_replaces_text_with_redact_marker() -> None:
     assert "[REDACT]" in output.paragraphs[0].text
 
 
-def test_pptx_bounding_box_adds_redaction_cover() -> None:
+def test_pptx_bounding_box_removes_intersecting_shape_and_its_text() -> None:
     result = redact_document(
         Document(base64data=base64.b64encode(pptx_with_text()).decode(), filename="source.pptx"),
         [BoundingBoxTarget(type="bounding_box", values=[BoundingBox(page=0, x=0, y=0, width=1, height=1)])],
@@ -146,10 +146,11 @@ def test_pptx_bounding_box_adds_redaction_cover() -> None:
 
     assert isinstance(result, Document)
     output = Presentation(BytesIO(base64.b64decode(result.base64data)))
-    assert len(output.slides[0].shapes) == 2
+    assert len(output.slides[0].shapes) == 0
+    assert "secret" not in "".join(shape.text for shape in output.slides[0].shapes if shape.has_text_frame)
 
 
-def test_pptx_page_redaction_adds_full_slide_cover() -> None:
+def test_pptx_page_redaction_removes_all_slide_shapes() -> None:
     result = redact_document(
         Document(base64data=base64.b64encode(pptx_with_text()).decode(), filename="source.pptx"),
         [PageTarget(type="page", values=[0])],
@@ -157,8 +158,51 @@ def test_pptx_page_redaction_adds_full_slide_cover() -> None:
 
     assert isinstance(result, Document)
     output = Presentation(BytesIO(base64.b64decode(result.base64data)))
-    cover = output.slides[0].shapes[1]
-    assert cover.left == 0
-    assert cover.top == 0
-    assert cover.width == output.slide_width
-    assert cover.height == output.slide_height
+    assert len(output.slides[0].shapes) == 0
+
+
+def test_pdf_regex_redacts_exact_multiline_span_without_redacting_surrounding_text() -> None:
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Owner: Jane")
+    page.insert_text((72, 96), "Doe; public")
+    data = pdf.tobytes()
+    pdf.close()
+
+    result = redact_document(
+        Document(base64data=base64.b64encode(data).decode(), filename="source.pdf"),
+        [RegexTarget(type="regex", patterns=[r"Jane\s+Doe"], ignore_case=False)],
+    )
+
+    assert isinstance(result, Document)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    text = output[0].get_text()
+    assert "Jane" not in text and "Doe" not in text
+    assert "Owner:" in text and "public" in text
+    output.close()
+
+
+def test_regex_only_first_match_is_document_wide_for_pdf_and_pptx() -> None:
+    pdf = fitz.open()
+    first = pdf.new_page()
+    first.insert_text((72, 72), "ID AB123456")
+    second = pdf.new_page()
+    second.insert_text((72, 72), "ID CD234567")
+    data = pdf.tobytes()
+    pdf.close()
+    target = RegexTarget(type="regex", patterns=[r"[A-Z]{2}\d{6}"], ignore_case=False, only_first_match=True)
+
+    result = redact_document(Document(base64data=base64.b64encode(data).decode(), filename="source.pdf"), [target])
+    assert isinstance(result, Document)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    assert "AB123456" not in output[0].get_text()
+    assert "CD234567" in output[1].get_text()
+    output.close()
+
+    pptx_result = redact_document(
+        Document(base64data=base64.b64encode(pptx_with_text("AB123456 AB123456")).decode(), filename="source.pptx"),
+        [target],
+    )
+    assert isinstance(pptx_result, Document)
+    presentation = Presentation(BytesIO(base64.b64decode(pptx_result.base64data)))
+    assert presentation.slides[0].shapes[0].text.count("AB123456") == 1
