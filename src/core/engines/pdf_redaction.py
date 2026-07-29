@@ -35,11 +35,12 @@ def _page(pdf: fitz.Document, number: int) -> fitz.Page:
 
 
 def _rect(page: fitz.Page, box: BoundingBox) -> fitz.Rect:
-    if box.units == "normalized":
-        return fitz.Rect(box.x * page.rect.width, box.y * page.rect.height,
-                         (box.x + box.width) * page.rect.width, (box.y + box.height) * page.rect.height)
-    scale = 72 if box.units == "inches" else 1
-    return fitz.Rect(box.x * scale, box.y * scale, (box.x + box.width) * scale, (box.y + box.height) * scale)
+    return fitz.Rect(
+        box.x * page.rect.width,
+        box.y * page.rect.height,
+        (box.x + box.width) * page.rect.width,
+        (box.y + box.height) * page.rect.height,
+    )
 
 
 def _add(page: fitz.Page, rect: fitz.Rect, color: tuple[float, float, float], options: RedactionOptions) -> None:
