@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import re
 from pathlib import Path
 
 import fitz
@@ -12,6 +11,7 @@ from src.core.models.document import Document
 from src.core.engines.pdf_redaction import _match_rectangles, _text_index
 from src.core.models.replacement import ReplacementTarget
 from src.core.services.replacement_text import replacement_text
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _replacement_lines(original: str, replacement: str, static: bool) -> list[str]:
@@ -62,8 +62,9 @@ def replace_pdf_document(document: Document, targets: list[ReplacementTarget], *
                 if not 0 <= number < pdf.page_count:
                     raise ValueError(f"Page {number} is out of range (document has {pdf.page_count} pages)")
                 page = pdf[number]
-                flags = re.IGNORECASE if target.ignore_case else 0
-                pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+                pattern = compile_text_pattern(
+                    target.values, ignore_case=target.ignore_case, partial_match=target.partial_match
+                )
                 text, positions = _text_index(page)
                 for match in pattern.finditer(text):
                     if match.start() == match.end():

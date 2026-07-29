@@ -20,6 +20,7 @@ from src.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _text_frames(shapes: object) -> list[object]:
@@ -105,8 +106,7 @@ def redact_pptx_document(
     frames_by_slide = {index: _text_frames(slide.shapes) for index, slide in enumerate(presentation.slides)}
     for target in targets:
         if isinstance(target, TextTarget):
-            flags = re.IGNORECASE if target.ignore_case else 0
-            pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+            pattern = compile_text_pattern(target.values, ignore_case=target.ignore_case, partial_match=target.partial_match)
             selection = target.pages if target.pages is not None else range(len(presentation.slides))
             for index in selection:
                 if not 0 <= index < len(presentation.slides):

@@ -180,12 +180,15 @@ Redact all exact occurrences, optionally restricted to pages:
   "type": "text",
   "values": ["Jane Doe", "123-45-6789"],
   "pages": [0, 2],
-  "ignore_case": true
+  "ignore_case": true,
+  "partial_match": false
 }
 ```
 
 `ignore_case` defaults to `false`. When enabled, each text value matches any
-letter casing.
+letter casing. `partial_match` defaults to `false`, so text is matched only
+when it is not adjacent to an alphanumeric character. Set it to `true` to also
+match text embedded within a larger alphanumeric value.
 
 ### Regular expression
 

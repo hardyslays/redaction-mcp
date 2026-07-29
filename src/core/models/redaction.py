@@ -30,6 +30,7 @@ class TextTarget(BaseTargetModel):
     values: list[str] = Field(min_length=1)
     pages: list[int] | None = None
     ignore_case: bool = False
+    partial_match: bool = False
 
 
 class PageTarget(BaseTargetModel):

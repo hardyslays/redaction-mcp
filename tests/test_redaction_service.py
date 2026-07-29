@@ -2,6 +2,7 @@ import base64
 from io import BytesIO
 
 import fitz
+import pytest
 from docx import Document as DocxDocument
 from pptx import Presentation
 from pptx.util import Inches
@@ -39,6 +40,19 @@ def pptx_with_text(text: str = "secret visible") -> bytes:
     return data.getvalue()
 
 
+def output_text(result: Document, extension: str) -> str:
+    data = base64.b64decode(result.base64data)
+    if extension == "pdf":
+        output = fitz.open(stream=data, filetype="pdf")
+        try:
+            return output[0].get_text()
+        finally:
+            output.close()
+    if extension == "docx":
+        return DocxDocument(BytesIO(data)).paragraphs[0].text
+    return Presentation(BytesIO(data)).slides[0].shapes[0].text
+
+
 def test_text_redaction_removes_matching_text() -> None:
     result = redact_document(
         Document(base64data=base64.b64encode(pdf_with_text()).decode(), filename="source.pdf"),
@@ -67,6 +81,23 @@ def test_text_redaction_ignore_case_is_opt_in_for_pdf() -> None:
     output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
     assert "SECRET" not in output[0].get_text()
     output.close()
+
+
+@pytest.mark.parametrize("extension", ["pdf", "docx", "pptx"])
+def test_text_redaction_requires_alphanumeric_boundaries_by_default(extension: str) -> None:
+    source = "john johnathon"
+    builders = {"pdf": pdf_with_text, "docx": docx_with_text, "pptx": pptx_with_text}
+    document = Document(base64data=base64.b64encode(builders[extension](source)).decode(), filename=f"source.{extension}")
+
+    safe_result = redact_document(document, [TextTarget(type="text", values=["john"])])
+    assert isinstance(safe_result, Document)
+    safe_text = output_text(safe_result, extension)
+    assert "johnathon" in safe_text
+    assert "john " not in safe_text
+
+    partial_result = redact_document(document, [TextTarget(type="text", values=["john"], partial_match=True)])
+    assert isinstance(partial_result, Document)
+    assert "johnathon" not in output_text(partial_result, extension)
 
 
 def test_normalized_bounding_box_redacts_area() -> None:

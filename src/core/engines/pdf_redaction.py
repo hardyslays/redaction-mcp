@@ -18,6 +18,7 @@ from src.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _color(hex_color: str) -> tuple[float, float, float]:
@@ -130,8 +131,9 @@ def redact_pdf_document(
                     page = _page(pdf, box.page)
                     _add(page, _rect(page, box), color, options)
             elif isinstance(target, TextTarget):
-                flags = re.IGNORECASE if target.ignore_case else 0
-                pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+                pattern = compile_text_pattern(
+                    target.values, ignore_case=target.ignore_case, partial_match=target.partial_match
+                )
                 for page in _pages(pdf, target.pages):
                     text, positions = _text_index(page)
                     _add_pattern_matches(page, text, pattern, positions, color, options)

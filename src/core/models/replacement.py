@@ -14,6 +14,7 @@ class TextReplacementTarget(BaseModel):
     static_text: str | None = None
     pages: list[int] | None = None
     ignore_case: bool = False
+    partial_match: bool = False
 
     @model_validator(mode="after")
     def validate_static_text(self) -> "TextReplacementTarget":

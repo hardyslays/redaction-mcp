@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import re
 from io import BytesIO
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from src.core.engines.pptx_redaction import _slides, _text_frames
 from src.core.models.document import Document
 from src.core.models.replacement import ReplacementTarget
 from src.core.services.replacement_text import replacement_text
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _replace(frame: object, pattern: re.Pattern[str], target: ReplacementTarget) -> None:
@@ -29,8 +29,9 @@ def replace_pptx_document(document: Document, targets: list[ReplacementTarget], 
     presentation = Presentation(BytesIO(data if data is not None else document.decoded_bytes()))
     frames_by_slide = {index: _text_frames(slide.shapes) for index, slide in enumerate(presentation.slides)}
     for target in targets:
-        flags = re.IGNORECASE if target.ignore_case else 0
-        pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+        pattern = compile_text_pattern(
+            target.values, ignore_case=target.ignore_case, partial_match=target.partial_match
+        )
         selection = target.pages if target.pages is not None else range(len(presentation.slides))
         for index in selection:
             if not 0 <= index < len(presentation.slides):

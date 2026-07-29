@@ -2,6 +2,7 @@ import base64
 from io import BytesIO
 
 import fitz
+import pytest
 from docx import Document as DocxDocument
 from pptx import Presentation
 from pptx.util import Inches
@@ -42,6 +43,19 @@ def pptx_with_text(text: str) -> bytes:
     data = BytesIO()
     presentation.save(data)
     return data.getvalue()
+
+
+def output_text(result: Document, extension: str) -> str:
+    data = base64.b64decode(result.base64data)
+    if extension == "pdf":
+        output = fitz.open(stream=data, filetype="pdf")
+        try:
+            return output[0].get_text()
+        finally:
+            output.close()
+    if extension == "docx":
+        return DocxDocument(BytesIO(data)).paragraphs[0].text
+    return Presentation(BytesIO(data)).slides[0].shapes[0].text
 
 
 def test_partial_replacement_masks_non_whitespace_and_keeps_suffix() -> None:
@@ -89,6 +103,25 @@ def test_pdf_replacement_ignore_case_is_opt_in() -> None:
     assert "JANE DOE" not in output[0].get_text()
     assert "[SAFE]" in output[0].get_text()
     output.close()
+
+
+@pytest.mark.parametrize("extension", ["pdf", "docx", "pptx"])
+def test_replacement_requires_alphanumeric_boundaries_by_default(extension: str) -> None:
+    source = "john johnathon"
+    builders = {"pdf": pdf_with_text, "docx": docx_with_text, "pptx": pptx_with_text}
+    document = Document(base64data=base64.b64encode(builders[extension](source)).decode(), filename=f"source.{extension}")
+
+    safe_result = replace_document(document, [target("STATIC", source="john", static_text="SAFE")])
+    assert not isinstance(safe_result, ReplacementError)
+    safe_text = output_text(safe_result, extension)
+    assert "johnathon" in safe_text
+    assert safe_text.count("[SAFE]") == 1
+
+    partial_result = replace_document(
+        document, [target("STATIC", source="john", static_text="SAFE", partial_match=True)]
+    )
+    assert not isinstance(partial_result, ReplacementError)
+    assert "johnathon" not in output_text(partial_result, extension)
 
 
 def test_docx_replacement_permanently_removes_original_for_all_strategies() -> None:
