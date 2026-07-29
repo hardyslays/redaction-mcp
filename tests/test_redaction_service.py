@@ -53,6 +53,22 @@ def test_text_redaction_removes_matching_text() -> None:
     output.close()
 
 
+def test_text_redaction_ignore_case_is_opt_in_for_pdf() -> None:
+    source = Document(base64data=base64.b64encode(pdf_with_text("SECRET visible")).decode(), filename="source.pdf")
+
+    case_sensitive = redact_document(source, [TextTarget(type="text", values=["secret"])])
+    assert isinstance(case_sensitive, Document)
+    output = fitz.open(stream=base64.b64decode(case_sensitive.base64data), filetype="pdf")
+    assert "SECRET" in output[0].get_text()
+    output.close()
+
+    result = redact_document(source, [TextTarget(type="text", values=["secret"], ignore_case=True)])
+    assert isinstance(result, Document)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    assert "SECRET" not in output[0].get_text()
+    output.close()
+
+
 def test_normalized_bounding_box_redacts_area() -> None:
     result = redact_document(
         Document(base64data=base64.b64encode(pdf_with_text("hide")).decode(), filename="source.pdf"),
@@ -123,6 +139,24 @@ def test_pptx_text_redaction_removes_matching_text() -> None:
     assert "secret" not in output.slides[0].shapes[0].text
     assert "******" in output.slides[0].shapes[0].text
     assert "visible" in output.slides[0].shapes[0].text
+
+
+def test_docx_and_pptx_text_redaction_ignore_case() -> None:
+    docx_result = redact_document(
+        Document(base64data=base64.b64encode(docx_with_text("SECRET visible")).decode(), filename="source.docx"),
+        [TextTarget(type="text", values=["secret"], ignore_case=True)],
+    )
+    assert isinstance(docx_result, Document)
+    docx = DocxDocument(BytesIO(base64.b64decode(docx_result.base64data)))
+    assert "SECRET" not in docx.paragraphs[0].text
+
+    pptx_result = redact_document(
+        Document(base64data=base64.b64encode(pptx_with_text("SECRET visible")).decode(), filename="source.pptx"),
+        [TextTarget(type="text", values=["secret"], ignore_case=True)],
+    )
+    assert isinstance(pptx_result, Document)
+    pptx = Presentation(BytesIO(base64.b64decode(pptx_result.base64data)))
+    assert "SECRET" not in pptx.slides[0].shapes[0].text
 
 
 def test_mask_redaction_replaces_text_with_redact_marker() -> None:

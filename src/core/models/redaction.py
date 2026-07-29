@@ -29,6 +29,7 @@ class TextTarget(BaseTargetModel):
     type: Literal["text"]
     values: list[str] = Field(min_length=1)
     pages: list[int] | None = None
+    ignore_case: bool = False
 
 
 class PageTarget(BaseTargetModel):

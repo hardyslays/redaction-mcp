@@ -74,6 +74,23 @@ def test_pdf_replacement_permanently_removes_original_and_inserts_static_value()
     output.close()
 
 
+def test_pdf_replacement_ignore_case_is_opt_in() -> None:
+    source = Document(base64data=base64.b64encode(pdf_with_text("Owner JANE DOE")).decode(), filename="source.pdf")
+
+    case_sensitive = replace_document(source, [target("STATIC", static_text="SAFE")])
+    assert not isinstance(case_sensitive, ReplacementError)
+    output = fitz.open(stream=base64.b64decode(case_sensitive.base64data), filetype="pdf")
+    assert "JANE DOE" in output[0].get_text()
+    output.close()
+
+    result = replace_document(source, [target("STATIC", static_text="SAFE", ignore_case=True)])
+    assert not isinstance(result, ReplacementError)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    assert "JANE DOE" not in output[0].get_text()
+    assert "[SAFE]" in output[0].get_text()
+    output.close()
+
+
 def test_docx_replacement_permanently_removes_original_for_all_strategies() -> None:
     for kind, expected, kwargs in (
         ("PARTIAL", "**** *oe", {}),
@@ -127,6 +144,26 @@ def test_pptx_replacement_permanently_removes_original_for_all_strategies() -> N
         text = output.slides[0].shapes[0].text
         assert "Jane Doe" not in text
         assert expected in text
+
+
+def test_docx_and_pptx_replacement_ignore_case() -> None:
+    docx_result = replace_document(
+        Document(base64data=base64.b64encode(docx_with_text("Owner JANE DOE")).decode(), filename="source.docx"),
+        [target("STATIC", static_text="SAFE", ignore_case=True)],
+    )
+    assert not isinstance(docx_result, ReplacementError)
+    docx = DocxDocument(BytesIO(base64.b64decode(docx_result.base64data)))
+    assert "JANE DOE" not in docx.paragraphs[0].text
+    assert "[SAFE]" in docx.paragraphs[0].text
+
+    pptx_result = replace_document(
+        Document(base64data=base64.b64encode(pptx_with_text("Owner JANE DOE")).decode(), filename="source.pptx"),
+        [target("STATIC", static_text="SAFE", ignore_case=True)],
+    )
+    assert not isinstance(pptx_result, ReplacementError)
+    pptx = Presentation(BytesIO(base64.b64decode(pptx_result.base64data)))
+    assert "JANE DOE" not in pptx.slides[0].shapes[0].text
+    assert "[SAFE]" in pptx.slides[0].shapes[0].text
 
 
 def test_pptx_replacement_handles_multiline_text_and_slide_filter() -> None:

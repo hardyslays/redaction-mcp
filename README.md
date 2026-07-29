@@ -179,9 +179,13 @@ Redact all exact occurrences, optionally restricted to pages:
 {
   "type": "text",
   "values": ["Jane Doe", "123-45-6789"],
-  "pages": [0, 2]
+  "pages": [0, 2],
+  "ignore_case": true
 }
 ```
+
+`ignore_case` defaults to `false`. When enabled, each text value matches any
+letter casing.
 
 ### Regular expression
 

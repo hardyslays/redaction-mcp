@@ -13,6 +13,7 @@ class TextReplacementTarget(BaseModel):
     replacement_type: Literal["PARTIAL", "STATIC", "REGEX"]
     static_text: str | None = None
     pages: list[int] | None = None
+    ignore_case: bool = False
 
     @model_validator(mode="after")
     def validate_static_text(self) -> "TextReplacementTarget":

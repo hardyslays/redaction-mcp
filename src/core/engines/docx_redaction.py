@@ -57,9 +57,10 @@ def _replace(paragraph: Paragraph, pattern: re.Pattern[str], options: RedactionO
     return replacements
 
 
-def _redact_text(paragraphs: list[Paragraph], values: list[str], options: RedactionOptions) -> None:
+def _redact_text(paragraphs: list[Paragraph], target: TextTarget, options: RedactionOptions) -> None:
     """Compile once and visit each paragraph once for a text target."""
-    pattern = re.compile("|".join(re.escape(value) for value in sorted(values, key=len, reverse=True)))
+    flags = re.IGNORECASE if target.ignore_case else 0
+    pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
     for paragraph in paragraphs:
         _replace(paragraph, pattern, options)
 
@@ -88,7 +89,7 @@ def redact_docx_document(
         if isinstance(target, TextTarget):
             if target.pages is not None:
                 raise ValueError("DOCX redaction does not support page-restricted targets")
-            _redact_text(paragraphs, target.values, options)
+            _redact_text(paragraphs, target, options)
         elif isinstance(target, RegexTarget):
             if target.pages is not None:
                 raise ValueError("DOCX redaction does not support page-restricted targets")

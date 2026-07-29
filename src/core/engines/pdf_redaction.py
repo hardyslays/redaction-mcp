@@ -130,7 +130,8 @@ def redact_pdf_document(
                     page = _page(pdf, box.page)
                     _add(page, _rect(page, box), color, options)
             elif isinstance(target, TextTarget):
-                pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)))
+                flags = re.IGNORECASE if target.ignore_case else 0
+                pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
                 for page in _pages(pdf, target.pages):
                     text, positions = _text_index(page)
                     _add_pattern_matches(page, text, pattern, positions, color, options)
