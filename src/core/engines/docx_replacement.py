@@ -32,7 +32,8 @@ def replace_docx_document(document: Document, targets: list[ReplacementTarget], 
     for target in targets:
         if target.pages is not None:
             raise ValueError("DOCX data replacement does not support page-restricted targets")
-        pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)))
+        flags = re.IGNORECASE if target.ignore_case else 0
+        pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
         for paragraph in paragraphs:
             _replace(paragraph, pattern, target)
     output = BytesIO()

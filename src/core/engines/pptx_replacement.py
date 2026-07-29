@@ -29,7 +29,8 @@ def replace_pptx_document(document: Document, targets: list[ReplacementTarget], 
     presentation = Presentation(BytesIO(data if data is not None else document.decoded_bytes()))
     frames_by_slide = {index: _text_frames(slide.shapes) for index, slide in enumerate(presentation.slides)}
     for target in targets:
-        pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)))
+        flags = re.IGNORECASE if target.ignore_case else 0
+        pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
         selection = target.pages if target.pages is not None else range(len(presentation.slides))
         for index in selection:
             if not 0 <= index < len(presentation.slides):

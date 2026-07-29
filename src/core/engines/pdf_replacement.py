@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import base64
+import re
 from pathlib import Path
 
 import fitz
 
 from src.core.models.document import Document
+from src.core.engines.pdf_redaction import _match_rectangles, _text_index
 from src.core.models.replacement import ReplacementTarget
 from src.core.services.replacement_text import replacement_text
 
@@ -60,19 +62,20 @@ def replace_pdf_document(document: Document, targets: list[ReplacementTarget], *
                 if not 0 <= number < pdf.page_count:
                     raise ValueError(f"Page {number} is out of range (document has {pdf.page_count} pages)")
                 page = pdf[number]
-                for original in target.values:
+                flags = re.IGNORECASE if target.ignore_case else 0
+                pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+                text, positions = _text_index(page)
+                for match in pattern.finditer(text):
+                    if match.start() == match.end():
+                        continue
+                    original = match.group()
                     replacement = replacement_text(original, target)
-                    rects = page.search_for(original)
-                    source_lines = original.splitlines()
-                    line_count = max(1, len(source_lines))
+                    rects = _match_rectangles(match, positions)
                     values = _replacement_lines(original, replacement, target.replacement_type == "STATIC")
-                    for start in range(0, len(rects), line_count):
-                        match_rects = rects[start:start + line_count]
-                        # Some PDFs report a multiline match as one rectangle.
-                        match_values = [replacement] if len(match_rects) == 1 else values
-                        for rect, value in zip(match_rects, match_values):
-                            page.add_redact_annot(rect, fill=False)
-                            insertions.append((number, rect, value))
+                    match_values = [replacement] if len(rects) == 1 else values
+                    for rect, value in zip(rects, match_values):
+                        page.add_redact_annot(rect, fill=False)
+                        insertions.append((number, rect, value))
         # Applying annotations removes the original content from the PDF content stream.
         for page in pdf:
             page.apply_redactions()
