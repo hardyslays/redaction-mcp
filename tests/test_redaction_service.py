@@ -1,7 +1,9 @@
 import base64
 from io import BytesIO
+from zipfile import ZIP_DEFLATED, ZipFile
 
 import fitz
+import pytest
 from docx import Document as DocxDocument
 from pptx import Presentation
 from pptx.util import Inches
@@ -39,6 +41,34 @@ def pptx_with_text(text: str = "secret visible") -> bytes:
     return data.getvalue()
 
 
+def pptm_with_text(text: str) -> bytes:
+    source = BytesIO(pptx_with_text(text))
+    output = BytesIO()
+    with ZipFile(source) as archive, ZipFile(output, "w", ZIP_DEFLATED) as replacement:
+        for entry in archive.infolist():
+            data = archive.read(entry.filename)
+            if entry.filename == "[Content_Types].xml":
+                data = data.replace(
+                    b"application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml",
+                    b"application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml",
+                )
+            replacement.writestr(entry, data)
+    return output.getvalue()
+
+
+def output_text(result: Document, extension: str) -> str:
+    data = base64.b64decode(result.base64data)
+    if extension == "pdf":
+        output = fitz.open(stream=data, filetype="pdf")
+        try:
+            return output[0].get_text()
+        finally:
+            output.close()
+    if extension == "docx":
+        return DocxDocument(BytesIO(data)).paragraphs[0].text
+    return Presentation(BytesIO(data)).slides[0].shapes[0].text
+
+
 def test_text_redaction_removes_matching_text() -> None:
     result = redact_document(
         Document(base64data=base64.b64encode(pdf_with_text()).decode(), filename="source.pdf"),
@@ -69,6 +99,23 @@ def test_text_redaction_ignore_case_is_opt_in_for_pdf() -> None:
     output.close()
 
 
+@pytest.mark.parametrize("extension", ["pdf", "docx", "pptx"])
+def test_text_redaction_requires_alphanumeric_boundaries_by_default(extension: str) -> None:
+    source = "john johnathon"
+    builders = {"pdf": pdf_with_text, "docx": docx_with_text, "pptx": pptx_with_text}
+    document = Document(base64data=base64.b64encode(builders[extension](source)).decode(), filename=f"source.{extension}")
+
+    safe_result = redact_document(document, [TextTarget(type="text", values=["john"])])
+    assert isinstance(safe_result, Document)
+    safe_text = output_text(safe_result, extension)
+    assert "johnathon" in safe_text
+    assert "john " not in safe_text
+
+    partial_result = redact_document(document, [TextTarget(type="text", values=["john"], partial_match=True)])
+    assert isinstance(partial_result, Document)
+    assert "johnathon" not in output_text(partial_result, extension)
+
+
 def test_normalized_bounding_box_redacts_area() -> None:
     result = redact_document(
         Document(base64data=base64.b64encode(pdf_with_text("hide")).decode(), filename="source.pdf"),
@@ -83,12 +130,54 @@ def test_normalized_bounding_box_redacts_area() -> None:
 
 def test_unsupported_document_returns_typed_error() -> None:
     result = redact_document(
-        Document(base64data=base64.b64encode(b"plain text").decode(), filename="note.txt"),
+        Document(base64data=base64.b64encode(b"plain text").decode(), filename="note.csv"),
         [TextTarget(type="text", values=["text"])],
     )
 
     assert isinstance(result, RedactionError)
-    assert result.message == "Only PDF, DOCX, and PPTX documents are currently supported"
+    assert result.message == "Only PDF, DOCX, PPTX, PPTM, and TXT documents are currently supported"
+
+
+def test_txt_text_redaction_replaces_matching_text_with_asterisks() -> None:
+    result = redact_document(
+        Document(base64data=base64.b64encode(b"secret visible").decode(), filename="source.txt"),
+        [TextTarget(type="text", values=["secret"])],
+    )
+
+    assert isinstance(result, Document)
+    assert result.filename == "source-redacted.txt"
+    assert result.mime_type == "text/plain"
+    assert base64.b64decode(result.base64data) == b"****** visible"
+
+
+def test_txt_page_redaction_masks_text_and_preserves_whitespace_layout() -> None:
+    result = redact_document(
+        Document(base64data=base64.b64encode(b"Name: Jane Doe\n\tID 42\n").decode(), filename="source.txt"),
+        [PageTarget(type="page", values=[0])],
+    )
+
+    assert isinstance(result, Document)
+    assert base64.b64decode(result.base64data) == b"***** **** ***\n\t** **\n"
+
+
+@pytest.mark.parametrize(
+    ("target", "message"),
+    [
+        (PageTarget(type="page", values=[1]), "TXT redaction supports only page index 0"),
+        (
+            BoundingBoxTarget(type="bounding_box", values=[BoundingBox(page=0, x=0, y=0, width=1, height=1)]),
+            "TXT redaction does not support bounding-box targets",
+        ),
+        (TextTarget(type="text", values=["secret"], pages=[1]), "TXT redaction supports only page index 0"),
+    ],
+)
+def test_txt_redaction_rejects_unsupported_targets_or_pages(target: object, message: str) -> None:
+    result = redact_document(
+        Document(base64data=base64.b64encode(b"secret").decode(), filename="source.txt"), [target]
+    )
+
+    assert isinstance(result, RedactionError)
+    assert result.message == message
 
 
 def test_docx_text_redaction_removes_matching_text() -> None:
@@ -141,6 +230,17 @@ def test_pptx_text_redaction_removes_matching_text() -> None:
     assert "visible" in output.slides[0].shapes[0].text
 
 
+def test_pptm_text_redaction_removes_matching_text() -> None:
+    result = redact_document(
+        Document(base64data=base64.b64encode(pptm_with_text("secret visible")).decode(), filename="source.pptm"),
+        [TextTarget(type="text", values=["secret"])],
+    )
+
+    assert isinstance(result, Document)
+    output = Presentation(BytesIO(base64.b64decode(result.base64data)))
+    assert "secret" not in output.slides[0].shapes[0].text
+
+
 def test_docx_and_pptx_text_redaction_ignore_case() -> None:
     docx_result = redact_document(
         Document(base64data=base64.b64encode(docx_with_text("SECRET visible")).decode(), filename="source.docx"),
@@ -172,16 +272,38 @@ def test_mask_redaction_replaces_text_with_redact_marker() -> None:
     assert "[REDACT]" in output.paragraphs[0].text
 
 
-def test_pptx_bounding_box_removes_intersecting_shape_and_its_text() -> None:
+def test_docx_bounding_box_redacts_only_intersecting_words() -> None:
     result = redact_document(
-        Document(base64data=base64.b64encode(pptx_with_text()).decode(), filename="source.pptx"),
-        [BoundingBoxTarget(type="bounding_box", values=[BoundingBox(page=0, x=0, y=0, width=1, height=1)])],
+        Document(base64data=base64.b64encode(docx_with_text("secret visible")).decode(), filename="source.docx"),
+        [BoundingBoxTarget(type="bounding_box", values=[BoundingBox(page=0, x=0, y=0, width=0.5, height=1)])],
+    )
+
+    assert isinstance(result, Document)
+    assert output_text(result, "docx") == "****** visible"
+
+
+def test_pptx_bounding_box_redacts_only_intersecting_words() -> None:
+    result = redact_document(
+        Document(base64data=base64.b64encode(pptx_with_text("secret visible")).decode(), filename="source.pptx"),
+        [BoundingBoxTarget(type="bounding_box", values=[BoundingBox(page=0, x=0.07, y=0.07, width=0.16, height=0.14)])],
     )
 
     assert isinstance(result, Document)
     output = Presentation(BytesIO(base64.b64decode(result.base64data)))
-    assert len(output.slides[0].shapes) == 0
-    assert "secret" not in "".join(shape.text for shape in output.slides[0].shapes if shape.has_text_frame)
+    assert len(output.slides[0].shapes) == 1
+    assert output.slides[0].shapes[0].text == "****** visible"
+
+
+@pytest.mark.parametrize(
+    "values",
+    [
+        {"page": 0, "x": 0, "y": 0, "width": 1, "height": 1, "units": "pixels"},
+        {"page": 0, "x": 0.8, "y": 0, "width": 0.3, "height": 1},
+    ],
+)
+def test_bounding_box_rejects_non_normalized_or_out_of_page_values(values: dict[str, object]) -> None:
+    with pytest.raises(ValueError):
+        BoundingBox.model_validate(values)
 
 
 def test_pptx_page_redaction_removes_all_slide_shapes() -> None:

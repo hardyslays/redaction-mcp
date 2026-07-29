@@ -116,6 +116,14 @@ Exactly one document source must be provided:
 `data` is not accepted. `base64data` makes the binary encoding explicit and
 keeps the API safe to serialize in JSON.
 
+Supported presentation formats are `.pptx` and macro-enabled `.pptm`. Legacy
+binary `.ppt` and slideshow `.ppsx` files are not supported by the PowerPoint
+engine.
+
+Plain-text `.txt` files are also supported. They have one logical page (index
+`0`): page redaction masks every non-whitespace character while preserving the
+text layout, and bounding-box redaction is unavailable.
+
 Optional document metadata:
 
 ```json
@@ -180,12 +188,15 @@ Redact all exact occurrences, optionally restricted to pages:
   "type": "text",
   "values": ["Jane Doe", "123-45-6789"],
   "pages": [0, 2],
-  "ignore_case": true
+  "ignore_case": true,
+  "partial_match": false
 }
 ```
 
 `ignore_case` defaults to `false`. When enabled, each text value matches any
-letter casing.
+letter casing. `partial_match` defaults to `false`, so text is matched only
+when it is not adjacent to an alphanumeric character. Set it to `true` to also
+match text embedded within a larger alphanumeric value.
 
 ### Regular expression
 
@@ -213,15 +224,15 @@ are not currently supported.
     "x": 0.1,
     "y": 0.2,
     "width": 0.3,
-    "height": 0.05,
-    "units": "normalized"
+    "height": 0.05
   }]
 }
 ```
 
-`normalized` coordinates are proportions of page width and height. `inches`
-are converted to PDF points (72 points per inch); `pixels` are used directly
-as PDF points.
+Bounding boxes always use normalized coordinates: `x`, `y`, `width`, and
+`height` are proportions of page width and height and must remain within 0–1.
+For DOCX, which does not retain rendered word positions, bounding-box matching
+uses its document-order text layout and supports page index `0`.
 
 ### Pages
 

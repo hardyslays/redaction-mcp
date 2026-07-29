@@ -2,18 +2,25 @@
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class BoundingBox(BaseModel):
-    """A rectangular area on a zero-based PDF page."""
+    """A rectangular area expressed as proportions of a zero-based page."""
+
+    model_config = ConfigDict(extra="forbid")
 
     page: int = Field(ge=0)
-    x: float
-    y: float
-    width: float = Field(gt=0)
-    height: float = Field(gt=0)
-    units: Literal["pixels", "inches", "normalized"] = "normalized"
+    x: float = Field(ge=0, le=1)
+    y: float = Field(ge=0, le=1)
+    width: float = Field(gt=0, le=1)
+    height: float = Field(gt=0, le=1)
+
+    @model_validator(mode="after")
+    def within_page(self) -> "BoundingBox":
+        if self.x + self.width > 1 or self.y + self.height > 1:
+            raise ValueError("normalized bounding boxes must fit within the page")
+        return self
 
 
 class BaseTargetModel(BaseModel):
@@ -30,6 +37,7 @@ class TextTarget(BaseTargetModel):
     values: list[str] = Field(min_length=1)
     pages: list[int] | None = None
     ignore_case: bool = False
+    partial_match: bool = False
 
 
 class PageTarget(BaseTargetModel):

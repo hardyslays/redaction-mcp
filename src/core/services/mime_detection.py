@@ -8,6 +8,9 @@ from zipfile import BadZipFile, ZipFile
 PDF_MIME_TYPE = "application/pdf"
 DOCX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
 PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+PPTM_MIME_TYPE = "application/vnd.ms-powerpoint.presentation.macroEnabled.12"
+PPTM_PACKAGE_MIME_TYPE = "application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml"
+TEXT_MIME_TYPE = "text/plain"
 
 
 def _office_mime_type(data: bytes) -> str | None:
@@ -20,6 +23,8 @@ def _office_mime_type(data: bytes) -> str | None:
         return DOCX_MIME_TYPE
     if b"presentationml.presentation.main+xml" in content_types:
         return PPTX_MIME_TYPE
+    if PPTM_PACKAGE_MIME_TYPE.encode() in content_types:
+        return PPTM_MIME_TYPE
     return None
 
 
@@ -36,5 +41,7 @@ def detect_mime_type(data: bytes | None = None, filename: str | None = None) -> 
             ".pdf": PDF_MIME_TYPE,
             ".docx": DOCX_MIME_TYPE,
             ".pptx": PPTX_MIME_TYPE,
+            ".pptm": PPTM_MIME_TYPE,
+            ".txt": TEXT_MIME_TYPE,
         }.get(Path(filename).suffix.lower())
     return None

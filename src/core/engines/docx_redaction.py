@@ -14,6 +14,7 @@ from docx.text.paragraph import Paragraph
 
 from src.core.models.document import Document
 from src.core.models.redaction import (
+    BoundingBox,
     BoundingBoxTarget,
     PageTarget,
     RedactionOptions,
@@ -21,6 +22,7 @@ from src.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _paragraphs_in_table(table: Table) -> list[Paragraph]:
@@ -59,8 +61,7 @@ def _replace(paragraph: Paragraph, pattern: re.Pattern[str], options: RedactionO
 
 def _redact_text(paragraphs: list[Paragraph], target: TextTarget, options: RedactionOptions) -> None:
     """Compile once and visit each paragraph once for a text target."""
-    flags = re.IGNORECASE if target.ignore_case else 0
-    pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+    pattern = compile_text_pattern(target.values, ignore_case=target.ignore_case, partial_match=target.partial_match)
     for paragraph in paragraphs:
         _replace(paragraph, pattern, options)
 
@@ -77,10 +78,39 @@ def _redact_regex(paragraphs: list[Paragraph], target: RegexTarget, options: Red
                 return
 
 
+def _redact_words_in_box(paragraphs: list[Paragraph], box: BoundingBox, options: RedactionOptions) -> None:
+    """Redact words intersecting a deterministic normalized DOCX text layout.
+
+    DOCX stores flow content rather than rendered word coordinates, so paragraphs
+    are laid out top-to-bottom in their document order and words span each line
+    in proportion to their character offsets.
+    """
+    if box.page != 0:
+        raise ValueError("DOCX bounding-box redaction supports only page index 0")
+    paragraph_height = 1 / len(paragraphs) if paragraphs else 1
+    for index, paragraph in enumerate(paragraphs):
+        text = paragraph.text
+        replacements: list[str] = []
+        cursor = 0
+        changed = False
+        for word in re.finditer(r"\S+", text):
+            word_x = word.start() / len(text)
+            word_width = (word.end() - word.start()) / len(text)
+            word_y = index * paragraph_height
+            if not (word_x + word_width <= box.x or box.x + box.width <= word_x or word_y + paragraph_height <= box.y or box.y + box.height <= word_y):
+                replacements.extend((text[cursor:word.start()], _replacement(word.group(), options)))
+                cursor = word.end()
+                changed = True
+        if changed:
+            replacements.append(text[cursor:])
+            paragraph.clear()
+            paragraph.add_run("".join(replacements))
+
+
 def redact_docx_document(
     document: Document, targets: list[RedactionTarget], options: RedactionOptions, *, data: bytes | None = None
 ) -> Document:
-    """Apply text and regular-expression redactions to a DOCX package."""
+    """Apply text, regular-expression, and normalized-area redactions to a DOCX package."""
     if data is None and document.base64data is None:
         raise ValueError("DOCX engine requires in-memory document base64data")
     source = DocxDocument(BytesIO(data if data is not None else document.decoded_bytes()))
@@ -94,7 +124,10 @@ def redact_docx_document(
             if target.pages is not None:
                 raise ValueError("DOCX redaction does not support page-restricted targets")
             _redact_regex(paragraphs, target, options)
-        elif isinstance(target, (BoundingBoxTarget, PageTarget)):
+        elif isinstance(target, BoundingBoxTarget):
+            for box in target.values:
+                _redact_words_in_box(paragraphs, box, options)
+        elif isinstance(target, PageTarget):
             raise ValueError("DOCX redaction supports only text and regex targets")
     output = BytesIO()
     source.save(output)

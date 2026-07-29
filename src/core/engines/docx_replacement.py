@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import re
 from io import BytesIO
 from pathlib import Path
 
@@ -13,6 +12,7 @@ from src.core.engines.docx_redaction import _paragraphs
 from src.core.models.document import Document
 from src.core.models.replacement import ReplacementTarget
 from src.core.services.replacement_text import replacement_text
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _replace(paragraph: object, pattern: re.Pattern[str], target: ReplacementTarget) -> None:
@@ -32,8 +32,9 @@ def replace_docx_document(document: Document, targets: list[ReplacementTarget], 
     for target in targets:
         if target.pages is not None:
             raise ValueError("DOCX data replacement does not support page-restricted targets")
-        flags = re.IGNORECASE if target.ignore_case else 0
-        pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+        pattern = compile_text_pattern(
+            target.values, ignore_case=target.ignore_case, partial_match=target.partial_match
+        )
         for paragraph in paragraphs:
             _replace(paragraph, pattern, target)
     output = BytesIO()

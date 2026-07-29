@@ -20,6 +20,7 @@ from src.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
+from src.core.services.text_matching import compile_text_pattern
 
 
 def _text_frames(shapes: object) -> list[object]:
@@ -32,6 +33,15 @@ def _text_frames(shapes: object) -> list[object]:
         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
             frames.extend(_text_frames(shape.shapes))
     return frames
+
+
+def _shapes(shapes: object) -> list[object]:
+    result = []
+    for shape in shapes:  # type: ignore[union-attr]
+        result.append(shape)
+        if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+            result.extend(_shapes(shape.shapes))
+    return result
 
 
 def _replacement(text: str, options: RedactionOptions) -> str:
@@ -55,16 +65,6 @@ def _slides(presentation: Presentation, selection: list[int] | None) -> list[obj
     return slides
 
 
-def _box(box: BoundingBox, presentation: Presentation) -> tuple[int, int, int, int]:
-    if box.units == "normalized":
-        return (
-            int(box.x * presentation.slide_width), int(box.y * presentation.slide_height),
-            int(box.width * presentation.slide_width), int(box.height * presentation.slide_height),
-        )
-    scale = 914400 if box.units == "inches" else 12700
-    return int(box.x * scale), int(box.y * scale), int(box.width * scale), int(box.height * scale)
-
-
 def _remove_shape(shape: object) -> None:
     element = shape._element  # type: ignore[attr-defined]
     element.getparent().remove(element)
@@ -82,12 +82,59 @@ def _intersects(shape: object, box: tuple[int, int, int, int]) -> bool:
     )
 
 
-def _remove_shapes_in_box(slide: object, box: tuple[int, int, int, int]) -> None:
-    # Removing a whole intersecting shape is deliberately conservative: leaving
-    # any part of its XML behind would make a bounding-box redaction reversible.
-    for shape in list(slide.shapes):
-        if _intersects(shape, box):
-            _remove_shape(shape)
+def _rectangles_intersect(first: tuple[int, int, int, int], second: tuple[int, int, int, int]) -> bool:
+    x, y, width, height = first
+    other_x, other_y, other_width, other_height = second
+    return not (
+        x + width <= other_x
+        or other_x + other_width <= x
+        or y + height <= other_y
+        or other_y + other_height <= y
+    )
+
+
+def _redact_words_in_box(slide: object, box: BoundingBox, presentation: Presentation, options: RedactionOptions) -> None:
+    target = (
+        int(box.x * presentation.slide_width),
+        int(box.y * presentation.slide_height),
+        int(box.width * presentation.slide_width),
+        int(box.height * presentation.slide_height),
+    )
+    for shape in _shapes(slide.shapes):
+        if not shape.has_text_frame or not _intersects(shape, target):
+            continue
+        text = shape.text_frame.text
+        words = list(re.finditer(r"\S+", text))
+        if not words:
+            continue
+        lines = text.splitlines() or [text]
+        line_offsets: list[int] = []
+        offset = 0
+        for line in lines:
+            line_offsets.append(offset)
+            offset += len(line) + 1
+        changed = False
+        parts: list[str] = []
+        cursor = 0
+        for word in words:
+            line_index = max(index for index, line_offset in enumerate(line_offsets) if line_offset <= word.start())
+            line_start = line_offsets[line_index]
+            line_length = len(lines[line_index])
+            word_left = shape.left + shape.width * (word.start() - line_start) / line_length
+            word_right = shape.left + shape.width * (word.end() - line_start) / line_length
+            word_box = (
+                int(word_left),
+                int(shape.top + shape.height * line_index / len(lines)),
+                int(word_right - word_left),
+                int(shape.height / len(lines)),
+            )
+            if _rectangles_intersect(word_box, target):
+                parts.extend((text[cursor:word.start()], _replacement(word.group(), options)))
+                cursor = word.end()
+                changed = True
+        if changed:
+            parts.append(text[cursor:])
+            shape.text_frame.text = "".join(parts)
 
 
 def _remove_all_shapes(slide: object) -> None:
@@ -98,15 +145,14 @@ def _remove_all_shapes(slide: object) -> None:
 def redact_pptx_document(
     document: Document, targets: list[RedactionTarget], options: RedactionOptions, *, data: bytes | None = None
 ) -> Document:
-    """Apply text redactions and permanently remove shapes selected by area/page."""
+    """Apply text redactions and redact words selected by area/page."""
     if data is None and document.base64data is None:
         raise ValueError("PPTX engine requires in-memory document base64data")
     presentation = Presentation(BytesIO(data if data is not None else document.decoded_bytes()))
     frames_by_slide = {index: _text_frames(slide.shapes) for index, slide in enumerate(presentation.slides)}
     for target in targets:
         if isinstance(target, TextTarget):
-            flags = re.IGNORECASE if target.ignore_case else 0
-            pattern = re.compile("|".join(re.escape(value) for value in sorted(target.values, key=len, reverse=True)), flags)
+            pattern = compile_text_pattern(target.values, ignore_case=target.ignore_case, partial_match=target.partial_match)
             selection = target.pages if target.pages is not None else range(len(presentation.slides))
             for index in selection:
                 if not 0 <= index < len(presentation.slides):
@@ -134,7 +180,7 @@ def redact_pptx_document(
         elif isinstance(target, BoundingBoxTarget):
             for box in target.values:
                 slide = _slides(presentation, [box.page])[0]
-                _remove_shapes_in_box(slide, _box(box, presentation))
+                _redact_words_in_box(slide, box, presentation, options)
         elif isinstance(target, PageTarget):
             for slide in _slides(presentation, target.values):
                 _remove_all_shapes(slide)
