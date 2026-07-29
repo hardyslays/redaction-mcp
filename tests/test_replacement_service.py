@@ -8,7 +8,13 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 from pptx.util import Inches
 
-from src.core.engines.pdf_replacement import _replacement_lines, replacement_text
+from src.core.engines.pdf_replacement import (
+    _TextStyle,
+    _background_color,
+    _fontname,
+    _replacement_lines,
+    replacement_text,
+)
 from src.core.models.document import Document
 from src.core.models.errors import ReplacementError
 from src.core.models.replacement import TextReplacementTarget
@@ -19,6 +25,15 @@ def pdf_with_text(text: str) -> bytes:
     pdf = fitz.open()
     page = pdf.new_page()
     page.insert_text((72, 72), text)
+    data = pdf.tobytes()
+    pdf.close()
+    return data
+
+
+def pdf_with_styled_text(text: str) -> bytes:
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 100), text, fontsize=16, fontname="hebi", color=(0.2, 0.4, 0.6))
     data = pdf.tobytes()
     pdf.close()
     return data
@@ -85,6 +100,32 @@ def test_static_replacement_is_bracketed() -> None:
     assert _replacement_lines("Long\nline", "[SAFE]", static=True) == ["[SA", "FE]"]
 
 
+@pytest.mark.parametrize(
+    ("source_font", "flags", "expected"),
+    [
+        ("Arial", 0, "helv"),
+        ("Calibri-BoldItalic", 0, "hebi"),
+        ("Times New Roman", 16, "tibo"),
+        ("Courier New", 2, "coit"),
+        ("Symbol", 0, "symbol"),
+        ("ZapfDingbats", 0, "zapfdingbats"),
+    ],
+)
+def test_pdf_font_mapping_handles_common_pdf_font_families(source_font: str, flags: int, expected: str) -> None:
+    style = _TextStyle(12, source_font, flags, (0, 0, 0), fitz.Point(0, 0))
+    assert _fontname(style) == expected
+
+
+def test_pdf_background_colour_is_extracted_from_source_span_area() -> None:
+    pdf = fitz.open()
+    page = pdf.new_page()
+    rect = fitz.Rect(72, 72, 144, 96)
+    page.draw_rect(rect, color=None, fill=(0.1, 0.2, 0.3))
+
+    assert _background_color(page, rect) == pytest.approx((0.1, 0.2, 0.3), abs=0.01)
+    pdf.close()
+
+
 def test_regex_replacement_preserves_character_pattern_without_source_text() -> None:
     assert replacement_text("AB-129 z", target("REGEX")) == "BC-230 a"
 
@@ -101,6 +142,28 @@ def test_pdf_replacement_permanently_removes_original_and_inserts_static_value()
     text = output[0].get_text()
     assert "Jane Doe" not in text
     assert "[REDACTED]" in text
+    output.close()
+
+
+def test_pdf_replacement_preserves_source_baseline_font_style_size_and_colour() -> None:
+    result = replace_document(
+        Document(base64data=base64.b64encode(pdf_with_styled_text("ID AB-129")).decode(), filename="source.pdf"),
+        [target("REGEX", source="AB-129")],
+    )
+
+    assert not isinstance(result, ReplacementError)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    spans = [
+        span
+        for block in output[0].get_text("rawdict")["blocks"]
+        for line in block.get("lines", [])
+        for span in line["spans"]
+    ]
+    replacement = next(span for span in spans if "".join(char["c"] for char in span["chars"]) == "BC-230")
+    assert replacement["font"] == "Helvetica-BoldOblique"
+    assert replacement["size"] == pytest.approx(16)
+    assert replacement["color"] == 0x336699
+    assert replacement["origin"][1] == pytest.approx(100)
     output.close()
 
 
