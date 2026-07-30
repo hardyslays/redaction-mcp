@@ -10,7 +10,7 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports.stdio import StdioTransport
 
-from src.mcp.models import McpDocument
+from src.core.models.document import Document
 from src.mcp.server import create_mcp_app, redaction_mcp
 
 
@@ -38,9 +38,10 @@ def test_mcp_tools_publish_flat_agent_facing_contract() -> None:
     asyncio.run(verify())
 
 
-def test_mcp_document_only_accepts_portable_base64_input() -> None:
+@pytest.mark.parametrize("source", [{"path": "/private/document.pdf"}, {"url": "https://example.test/document.pdf"}])
+def test_document_rejects_non_base64_sources(source: dict[str, str]) -> None:
     with pytest.raises(ValueError):
-        McpDocument.model_validate({"path": "/private/document.pdf"})
+        Document.model_validate(source)
 
 
 def test_stdio_mcp_initializes_discovers_and_invokes_tools() -> None:

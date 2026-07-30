@@ -110,25 +110,19 @@ Responses never expose a server-side output path.
 
 ## Core document contract
 
-`Document` has `extra="forbid"` and requires exactly one source. These source
-types are used by the core and FastAPI; the MCP-specific `McpDocument` model
-accepts base64 only:
+`Document` has `extra="forbid"` and requires base64 document data:
 
 | Field | Meaning |
 | --- | --- |
-| `path` | A file path on the server hosting the API or MCP process. |
-| `url` | A remotely accessible URL; the core fetches it with a 30-second timeout. |
-| `base64data` | Valid standard base64 document content; preferred for JSON/MCP callers. |
+| `base64data` | Valid standard base64 document content used by every transport. |
 
 Optional `filename` and `mime_type` guide type detection and output naming.
 When `mime_type` is absent, the service detects PDF signatures, Office package
 metadata, then a known file extension. The recognized MIME types are
 `application/pdf`, DOCX, PPTX, PPTM, and `text/plain`.
 
-Because `path` and `url` cause the service to read server-accessible resources,
-production deployments need authentication and source-access controls. Base64
-increases payload size by roughly one-third, so configure request-size limits
-for the deployment.
+Base64 increases payload size by roughly one-third, so configure request-size
+limits for the deployment.
 
 ## Redaction contract
 
@@ -281,9 +275,8 @@ uv run redaction-mcp-http
 Set `MCP_HOST` and `MCP_PORT` to configure the HTTP MCP bind address and port.
 Set `MCP_AUTH_TOKEN` as well when binding outside loopback; MCP clients then
 send it as a bearer token. The FastAPI application provides `GET /health`, `POST /redact`, and
-`POST /replace`. MCP exposes corresponding `redact` and `replace` tools using
-MCP-specific base64 document models, plus `inspect_document` for selecting
-targets.
+`POST /replace`. MCP exposes corresponding `redact` and `replace` tools, plus
+`inspect_document` for selecting targets.
 
 ## Contributor checklist
 

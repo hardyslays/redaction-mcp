@@ -19,8 +19,6 @@ class RedactionResponse(BaseModel):
 
     @classmethod
     def from_document(cls, document: Document) -> "RedactionResponse":
-        if document.base64data is None:
-            raise ValueError("Redaction output did not include base64data")
         return cls(
             filename=document.filename or "redacted.pdf",
             mime_type=document.mime_type or "application/octet-stream",
@@ -36,8 +34,6 @@ class ReplacementRequest(BaseModel):
 class ReplacementResponse(RedactionResponse):
     @classmethod
     def from_document(cls, document: Document) -> "ReplacementResponse":
-        if document.base64data is None:
-            raise ValueError("Replacement output did not include base64data")
         return cls(
             filename=document.filename or "replaced.pdf",
             mime_type=document.mime_type or "application/octet-stream",

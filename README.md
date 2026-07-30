@@ -121,19 +121,18 @@ also requires `MCP_AUTH_TOKEN`; clients must send it as a bearer token:
 MCP_HOST=0.0.0.0 MCP_PORT=8000 MCP_AUTH_TOKEN='replace-with-a-secret' uv run redaction-mcp-http
 ```
 
-## FastAPI document input contract
+## Document input contract
 
-Every request has `document`, `targets`, and optional `options` fields.
-Exactly one document source must be provided:
+Every FastAPI and MCP request uses the same base64 document model. A document
+must provide `base64data`:
 
 | Field | Use case | Notes |
 | --- | --- | --- |
-| `path` | Local server-side file | The path is resolved on the API/MCP server, not the client machine. |
-| `url` | Remote file | The server downloads the URL before processing. |
-| `base64data` | JSON/MCP payload | Standard base64-encoded document content. This is the recommended HTTP input. |
+| `base64data` | JSON/MCP payload | Standard base64-encoded document content. |
 
 `data` is not accepted. `base64data` makes the binary encoding explicit and
-keeps the API safe to serialize in JSON.
+keeps every transport safe to serialize in JSON. Server-local paths and remote
+URLs are not accepted.
 
 Supported presentation formats are `.pptx` and macro-enabled `.pptm`. Legacy
 binary `.ppt` and slideshow `.ppsx` files are not supported by the PowerPoint
@@ -180,20 +179,6 @@ curl --request POST http://127.0.0.1:8080/redact \
 
 jq -r '.base64data' response.json | base64 --decode > redacted.pdf
 ```
-
-### Redact a PDF available to the server by path
-
-```bash
-curl --request POST http://127.0.0.1:8080/redact \
-  --header 'Content-Type: application/json' \
-  --data '{
-    "document": {"path": "/srv/documents/input.pdf"},
-    "targets": [{"type": "text", "values": ["Confidential"]}]
-  }'
-```
-
-Do not use a client-local path with a remotely hosted API; use `base64data` or
-a URL instead.
 
 ## Redaction targets
 
@@ -295,9 +280,8 @@ returns either a redacted `Document` or a typed `RedactionError`.
 
 - Treat permanent redaction as irreversible. Keep source documents and verify
   output before distributing it.
-- The FastAPI API accepts `path` and `url`, so expose it only to trusted
-  callers or add source-access controls before deploying it publicly. MCP does
-  not accept either source type.
+- Documents are supplied as base64 only, so callers cannot make the server read
+  arbitrary local files or fetch arbitrary URLs.
 - Keep the HTTP MCP endpoint on loopback unless `MCP_AUTH_TOKEN` is configured.
 - Base64 increases payload size by roughly one third; use reasonable request
   limits and a file-storage workflow for large documents.

@@ -6,8 +6,10 @@ from io import BytesIO
 
 import fitz
 from docx import Document as DocxDocument
+from pydantic import BaseModel, Field
 from pptx import Presentation
 
+from src.core.models.document import Document
 from src.core.services.mime_detection import (
     DOCX_MIME_TYPE,
     PDF_MIME_TYPE,
@@ -16,7 +18,22 @@ from src.core.services.mime_detection import (
     TEXT_MIME_TYPE,
     detect_mime_type,
 )
-from src.mcp.models import DocumentInspection, DocumentPage, McpDocument
+
+
+class DocumentPage(BaseModel):
+    """Text visible to an agent on one zero-based document page or slide."""
+
+    index: int = Field(ge=0)
+    text: str
+
+
+class DocumentInspection(BaseModel):
+    """Bounded text extraction that lets agents select redaction targets."""
+
+    filename: str
+    mime_type: str
+    pages: list[DocumentPage]
+    truncated: bool
 
 
 def _pptx_text(data: bytes) -> list[str]:
@@ -24,10 +41,9 @@ def _pptx_text(data: bytes) -> list[str]:
     return ["\n".join(shape.text for shape in slide.shapes if getattr(shape, "has_text_frame", False)) for slide in presentation.slides]
 
 
-def inspect_document(document: McpDocument, max_characters: int) -> DocumentInspection:
+def inspect_document(document: Document, max_characters: int) -> DocumentInspection:
     """Extract visible text without returning more than ``max_characters``."""
-    core_document = document.to_document()
-    data = core_document.decoded_bytes()
+    data = document.decoded_bytes()
     mime_type = document.mime_type or detect_mime_type(data, document.filename)
     if mime_type == PDF_MIME_TYPE:
         pdf = fitz.open(stream=data, filetype="pdf")
