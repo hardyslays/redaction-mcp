@@ -1,10 +1,12 @@
 """Run the MCP server in streamable HTTP mode."""
 
 import os
-
 import uvicorn
-
 from src.mcp.server import create_mcp_app
+from dotenv import load_dotenv
+
+
+load_dotenv()
 
 app = create_mcp_app(os.getenv("MCP_AUTH_TOKEN"))
 
