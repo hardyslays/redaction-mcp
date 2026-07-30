@@ -35,50 +35,52 @@ uv run python -m pytest --cov=src --cov-report=html
 The tests are organized by transport and service behavior:
 
 - `tests/test_fastapi.py` verifies the HTTP API.
-- `tests/test_mcp.py` verifies the shared MCP tools.
+- `tests/test_mcp.py` verifies MCP STDIO and HTTP protocol behavior.
 - `tests/test_redaction_service.py` verifies matching, redaction engines, and
   document handling.
 - `tests/test_replacement_service.py` verifies replacement engines and output
   behavior.
 
 Add focused, independent tests whenever a core model, engine, or transport
-contract changes. Mock filesystem or network dependencies in unit tests rather
-than relying on external resources.
+contract changes.
 
 ## Project layout
 
 ```text
 src/
-├── cli/main.py                    # MCP STDIO entry point
+├── cli/
+│   ├── main.py                    # MCP STDIO entry point
+│   └── stdio.py                   # POSIX-safe MCP STDIO transport
 ├── mcp/
+│   ├── auth.py                    # Optional HTTP bearer-token middleware
+│   ├── inspection.py              # Bounded document-text extraction tool
 │   ├── main.py                    # Streamable HTTP MCP entry point
 │   └── server.py                  # FastMCP tools and ASGI application factory
 ├── server/
 │   ├── main.py                    # FastAPI application and routes
-│   └── models.py                  # Shared FastAPI/MCP request and response models
+│   └── models.py                  # FastAPI request and shared response models
 └── core/
     ├── models/                    # Pydantic input, target, option, and error models
-    ├── services/                  # Source loading, MIME routing, matching, replacement rules
+    ├── services/                  # MIME routing, matching, and replacement rules
     └── engines/                   # Format-specific redaction and replacement implementations
 tests/                             # Unit and transport tests
 ```
 
 ## Architecture
 
-FastAPI and MCP share the same core services, but intentionally have different
-input models. FastAPI supports server-side paths and URLs; MCP accepts portable
-base64 documents only, so an agent cannot cause server-side file reads or URL
-fetches. Transport code should validate its request model, call a service, and
-translate a typed core error into its protocol's error behavior.
+FastAPI and MCP use the same base64-only `Document` model and the same core
+services. Transport code validates the request, calls a service, and translates
+a typed core error into its protocol's error behavior. No transport resolves
+agent-provided filesystem paths or URLs.
 
 ```text
 FastAPI (/redact, /replace) ─┐
-MCP STDIO (inspect, redact, replace) ─┼─> core services
-MCP HTTP  (/mcp)                    ─┘             |
+MCP STDIO (inspect, redact, replace) ─┼─> base64 Document → core services
+MCP HTTP  (/mcp)                    ─┘                          |
                                               v
                          redaction_service / replacement_service
                                               |
-                    load bytes → detect MIME → select format engine
+                     decode bytes → detect MIME → select format engine
                                               |
        PDF (PyMuPDF) | DOCX (python-docx) | PPTX (python-pptx) | TXT
                                               |
@@ -92,7 +94,8 @@ message.
 
 ### Request and response models
 
-`src/server/models.py` owns the FastAPI contracts:
+`src/server/models.py` owns the FastAPI request models and the response models
+returned by both transports:
 
 ```python
 class RedactionRequest(BaseModel):
@@ -106,7 +109,7 @@ class ReplacementRequest(BaseModel):
 ```
 
 Both response types contain `filename`, `mime_type`, and `base64data`.
-Responses never expose a server-side output path.
+Responses contain in-memory base64 output only.
 
 ## Core document contract
 
@@ -203,7 +206,7 @@ an asterisk.
 }
 ```
 
-`fill_color` is validated by the PDF engine as a six-digit hexadecimal color.
+`fill_color` is validated as a six-digit hexadecimal color.
 `fill_opacity` is between 0 and 1. `permanent_redaction` defaults to `true` and
 applies PDF annotations; setting it to `false` keeps reviewable PDF
 annotations. `redaction_type` is `asterisks` by default or `mask` (`[REDACT]`)
@@ -274,9 +277,9 @@ uv run redaction-mcp-http
 
 Set `MCP_HOST` and `MCP_PORT` to configure the HTTP MCP bind address and port.
 Set `MCP_AUTH_TOKEN` as well when binding outside loopback; MCP clients then
-send it as a bearer token. The FastAPI application provides `GET /health`, `POST /redact`, and
-`POST /replace`. MCP exposes corresponding `redact` and `replace` tools, plus
-`inspect_document` for selecting targets.
+send it as a bearer token. The FastAPI application provides `GET /health`,
+`POST /redact`, and `POST /replace`. MCP exposes corresponding `redact` and
+`replace` tools, plus `inspect_document` for selecting targets.
 
 ## Contributor checklist
 
