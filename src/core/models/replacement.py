@@ -1,18 +1,20 @@
 """Pydantic models for text data replacement."""
 
-from typing import Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class TextReplacementTarget(BaseModel):
     """Text to locate, and the strategy used to replace every occurrence."""
 
+    model_config = ConfigDict(extra="forbid")
+
     type: Literal["text"]
     values: list[str] = Field(min_length=1)
     replacement_type: Literal["PARTIAL", "STATIC", "REGEX"]
     static_text: str | None = None
-    pages: list[int] | None = None
+    pages: list[Annotated[int, Field(ge=0)]] | None = None
     ignore_case: bool = False
     partial_match: bool = False
 

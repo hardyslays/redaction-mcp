@@ -65,7 +65,8 @@ Endpoints:
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `GET` | `/health` | Liveness check, returning `{"status":"ok"}`. |
-| `POST` | `/redact` | Redact a PDF and return the result as base64. |
+| `POST` | `/redact` | Redact a supported document and return the result as base64. |
+| `POST` | `/replace` | Replace selected text and return the result as base64. |
 
 ### MCP over STDIO
 
@@ -84,8 +85,25 @@ For example, an MCP client command can use:
 }
 ```
 
-The server provides one tool, `redact`, with the same request and response
-schema as the FastAPI API.
+The server provides three tools:
+
+- `inspect_document` extracts bounded, page/slide-grouped text so an agent can
+  identify exact text or regex targets.
+- `redact` permanently redacts text, regex, page, or bounding-box targets.
+- `replace` permanently replaces selected text.
+
+MCP tools use flat arguments, for example:
+
+```json
+{
+  "document": {"base64data": "...", "filename": "contract.pdf"},
+  "targets": [{"type": "text", "values": ["Confidential"]}]
+}
+```
+
+For MCP, `document` accepts only `base64data`, `filename`, and `mime_type`.
+This works the same in STDIO and HTTP mode and prevents server-side file reads
+or URL fetches from agent-supplied input.
 
 ### MCP over HTTP
 
@@ -96,13 +114,14 @@ uv run redaction-mcp-http
 ```
 
 It listens on `127.0.0.1:8000` by default and exposes MCP at `/mcp`. Configure
-the bind address or port with `MCP_HOST` and `MCP_PORT`:
+the bind address or port with `MCP_HOST` and `MCP_PORT`. A non-loopback bind
+also requires `MCP_AUTH_TOKEN`; clients must send it as a bearer token:
 
 ```bash
-MCP_HOST=0.0.0.0 MCP_PORT=8000 uv run redaction-mcp-http
+MCP_HOST=0.0.0.0 MCP_PORT=8000 MCP_AUTH_TOKEN='replace-with-a-secret' uv run redaction-mcp-http
 ```
 
-## Document input contract
+## FastAPI document input contract
 
 Every request has `document`, `targets`, and optional `options` fields.
 Exactly one document source must be provided:
@@ -134,7 +153,7 @@ Optional document metadata:
 ```
 
 The response contains `filename`, `mime_type`, and `base64data`. Decode the
-last field to retrieve the redacted PDF.
+last field to retrieve the processed document.
 
 ## FastAPI examples
 
@@ -276,9 +295,10 @@ returns either a redacted `Document` or a typed `RedactionError`.
 
 - Treat permanent redaction as irreversible. Keep source documents and verify
   output before distributing it.
-- A `path` or `url` makes the server read that resource. Expose this service
-  only to trusted callers, or add authentication and source-access controls
-  before deploying it publicly.
+- The FastAPI API accepts `path` and `url`, so expose it only to trusted
+  callers or add source-access controls before deploying it publicly. MCP does
+  not accept either source type.
+- Keep the HTTP MCP endpoint on loopback unless `MCP_AUTH_TOKEN` is configured.
 - Base64 increases payload size by roughly one third; use reasonable request
   limits and a file-storage workflow for large documents.
 

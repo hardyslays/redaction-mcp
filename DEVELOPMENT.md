@@ -65,14 +65,16 @@ tests/                             # Unit and transport tests
 
 ## Architecture
 
-All transports use the same Pydantic request models and core services. Transport
-code should only validate requests, call a service, and translate a typed core
-error into its protocol's error behavior.
+FastAPI and MCP share the same core services, but intentionally have different
+input models. FastAPI supports server-side paths and URLs; MCP accepts portable
+base64 documents only, so an agent cannot cause server-side file reads or URL
+fetches. Transport code should validate its request model, call a service, and
+translate a typed core error into its protocol's error behavior.
 
 ```text
 FastAPI (/redact, /replace) ─┐
-MCP STDIO (redact, replace) ─┼─> server.models request types
-MCP HTTP  (/mcp)             ─┘             |
+MCP STDIO (inspect, redact, replace) ─┼─> core services
+MCP HTTP  (/mcp)                    ─┘             |
                                               v
                          redaction_service / replacement_service
                                               |
@@ -90,7 +92,7 @@ message.
 
 ### Request and response models
 
-`src/server/models.py` owns the public, shared contracts:
+`src/server/models.py` owns the FastAPI contracts:
 
 ```python
 class RedactionRequest(BaseModel):
@@ -106,9 +108,11 @@ class ReplacementRequest(BaseModel):
 Both response types contain `filename`, `mime_type`, and `base64data`.
 Responses never expose a server-side output path.
 
-## Document contract
+## Core document contract
 
-`Document` has `extra="forbid"` and requires exactly one source:
+`Document` has `extra="forbid"` and requires exactly one source. These source
+types are used by the core and FastAPI; the MCP-specific `McpDocument` model
+accepts base64 only:
 
 | Field | Meaning |
 | --- | --- |
@@ -275,9 +279,11 @@ uv run redaction-mcp-http
 ```
 
 Set `MCP_HOST` and `MCP_PORT` to configure the HTTP MCP bind address and port.
-The FastAPI application provides `GET /health`, `POST /redact`, and
+Set `MCP_AUTH_TOKEN` as well when binding outside loopback; MCP clients then
+send it as a bearer token. The FastAPI application provides `GET /health`, `POST /redact`, and
 `POST /replace`. MCP exposes corresponding `redact` and `replace` tools using
-the same request and response models.
+MCP-specific base64 document models, plus `inspect_document` for selecting
+targets.
 
 ## Contributor checklist
 
