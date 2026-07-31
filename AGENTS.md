@@ -5,7 +5,9 @@
 ## Build and test commands:
 - Main driver file: src/main.py
 - To install required packages, use command `pip install -r requirements.txt`
-- To run FastAPI server, use command `python -m uvicorn src/main:app --port 8080`
+- To run FastAPI server, use command `uv run redaction-fastapi`
+- To run MPC server in STDIO mode, use command `uv run redaction-mcp-stdio`
+- To run MPC server in HTTP mode, use command `uv run redaction-mcp-http`
 - To run unit tests, use command `python -m pytest --cov=src --cov-report=html`
 
 ## Testing instructions:

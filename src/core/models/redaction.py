@@ -24,6 +24,8 @@ class BoundingBox(BaseModel):
 
 
 class BaseTargetModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     type: str
 
 
@@ -35,20 +37,20 @@ class BoundingBoxTarget(BaseTargetModel):
 class TextTarget(BaseTargetModel):
     type: Literal["text"]
     values: list[str] = Field(min_length=1)
-    pages: list[int] | None = None
+    pages: list[Annotated[int, Field(ge=0)]] | None = None
     ignore_case: bool = False
     partial_match: bool = False
 
 
 class PageTarget(BaseTargetModel):
     type: Literal["page"]
-    values: list[int] = Field(min_length=1)
+    values: list[Annotated[int, Field(ge=0)]] = Field(min_length=1)
 
 
 class RegexTarget(BaseTargetModel):
     type: Literal["regex"]
     patterns: list[str] = Field(min_length=1)
-    pages: list[int] | None = None
+    pages: list[Annotated[int, Field(ge=0)]] | None = None
     ignore_case: bool = True
     only_first_match: bool = False
     allow_unicode: bool = False
@@ -61,7 +63,9 @@ RedactionTarget = Annotated[
 
 
 class RedactionOptions(BaseModel):
-    fill_color: str = "#000000"
+    model_config = ConfigDict(extra="forbid")
+
+    fill_color: str = Field(default="#000000", pattern=r"^#[0-9A-Fa-f]{6}$")
     fill_opacity: float = Field(default=1.0, ge=0.0, le=1.0)
     permanent_redaction: bool = True
     redaction_type: Literal["mask", "asterisks"] = "asterisks"

@@ -1293,6 +1293,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "fastmcp" },
+    { name = "mcp" },
     { name = "pydantic" },
     { name = "pymupdf" },
     { name = "python-docx" },
@@ -1310,8 +1311,9 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
-    { name = "fastmcp", specifier = ">=2.0" },
+    { name = "fastmcp", specifier = ">=3.4,<4" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.27" },
+    { name = "mcp", specifier = ">=1.28,<2" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pymupdf", specifier = ">=1.24" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

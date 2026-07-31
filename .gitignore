@@ -11,3 +11,8 @@ wheels/
 
 # Data folder - used for local testing
 data/
+
+# Testing files
+.coverage
+
+.env
