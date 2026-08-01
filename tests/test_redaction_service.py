@@ -8,10 +8,10 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 from pptx.util import Inches
 
-from src.core.models.document import Document
-from src.core.models.errors import RedactionError
-from src.core.models.redaction import BoundingBox, BoundingBoxTarget, PageTarget, RedactionOptions, RegexTarget, TextTarget
-from src.core.services.redaction_service import redact_document
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.errors import RedactionError
+from redaction_mcp.core.models.redaction import BoundingBox, BoundingBoxTarget, PageTarget, RedactionOptions, RegexTarget, TextTarget
+from redaction_mcp.core.services.redaction_service import redact_document
 
 
 def pdf_with_text(text: str = "secret visible") -> bytes:

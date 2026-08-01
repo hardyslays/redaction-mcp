@@ -9,11 +9,11 @@ import re
 
 import fitz
 
-from src.core.models.document import Document
-from src.core.engines.pdf_redaction import _match_rectangles
-from src.core.models.replacement import ReplacementTarget
-from src.core.services.replacement_text import replacement_text
-from src.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.engines.pdf_redaction import _match_rectangles
+from redaction_mcp.core.models.replacement import ReplacementTarget
+from redaction_mcp.core.services.replacement_text import replacement_text
+from redaction_mcp.core.services.text_matching import compile_text_pattern
 
 
 def _replacement_lines(original: str, replacement: str, static: bool) -> list[str]:

@@ -1,13 +1,13 @@
 """Transport-independent document data replacement service."""
 
-from src.core.engines.docx_replacement import replace_docx_document
-from src.core.engines.pdf_replacement import replace_pdf_document
-from src.core.engines.pptx_replacement import replace_pptx_document
-from src.core.engines.txt_replacement import replace_txt_document
-from src.core.models.document import Document
-from src.core.models.errors import ReplacementError
-from src.core.models.replacement import ReplacementTarget
-from src.core.services.mime_detection import (
+from redaction_mcp.core.engines.docx_replacement import replace_docx_document
+from redaction_mcp.core.engines.pdf_replacement import replace_pdf_document
+from redaction_mcp.core.engines.pptx_replacement import replace_pptx_document
+from redaction_mcp.core.engines.txt_replacement import replace_txt_document
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.errors import ReplacementError
+from redaction_mcp.core.models.replacement import ReplacementTarget
+from redaction_mcp.core.services.mime_detection import (
     DOCX_MIME_TYPE,
     PDF_MIME_TYPE,
     PPTM_MIME_TYPE,

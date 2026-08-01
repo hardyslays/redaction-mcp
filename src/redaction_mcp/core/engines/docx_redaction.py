@@ -12,8 +12,8 @@ from docx.document import Document as DocxFile
 from docx.table import Table
 from docx.text.paragraph import Paragraph
 
-from src.core.models.document import Document
-from src.core.models.redaction import (
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.redaction import (
     BoundingBox,
     BoundingBoxTarget,
     PageTarget,
@@ -22,7 +22,7 @@ from src.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
-from src.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.services.text_matching import compile_text_pattern
 
 
 def _paragraphs_in_table(table: Table) -> list[Paragraph]:

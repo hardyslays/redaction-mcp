@@ -1,6 +1,6 @@
 """Replacement value generation shared by document-specific engines."""
 
-from src.core.models.replacement import ReplacementTarget
+from redaction_mcp.core.models.replacement import ReplacementTarget
 
 
 def _partial(value: str) -> str:

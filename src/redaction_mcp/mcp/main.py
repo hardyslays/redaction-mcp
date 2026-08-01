@@ -2,7 +2,7 @@
 
 import os
 import uvicorn
-from src.mcp.server import create_mcp_app
+from redaction_mcp.mcp.server import create_mcp_app
 from dotenv import load_dotenv
 
 

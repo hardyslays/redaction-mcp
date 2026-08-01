@@ -2,9 +2,9 @@
 
 from pydantic import BaseModel, Field
 
-from src.core.models.document import Document
-from src.core.models.redaction import RedactionOptions, RedactionTarget
-from src.core.models.replacement import ReplacementTarget
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.redaction import RedactionOptions, RedactionTarget
+from redaction_mcp.core.models.replacement import ReplacementTarget
 
 
 class RedactionRequest(BaseModel):
