@@ -11,6 +11,10 @@ It is primarily designed to be used by AI agents via MCP adapters to provide doc
 This project is aimed to be made into a full-fledged document "Sensitive Data Protection" MCP suite focused on inspection, de-identification and de-sensitization of documents. 
 It will support various document formats such as PDF, PPT, DOCX, TXT, etc. The scope of this MCP server is to provide SDP functionalities to the AI agents and Agentic workflows.
 
+ALso, A VERY IMPROTANT NOTE is that while this project is quite good at providing said capabilities to AI agents, but when talking about production-scenario, organisations often require much specific and customized capabilities which is out of scope of this project. 
+
+If you are going to build a SDP tool-set or suite of enterprise level, I would suggest creating a custom capabilities pipeline, as they often see a lot more success than generic SDP suites.
+
 ## Requirements
 
 - Python 3.12 or newer

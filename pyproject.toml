@@ -1,12 +1,12 @@
 [project]
 name = "redaction-mcp"
-version = "0.1.0"
+version = "0.1.1"
 description = "A MCP server library to provide Document Redaction and Data replacement capabilities to AI Agents"
 readme = "README.md"
 requires-python = ">=3.12"
 authors = [{ name="hardyslays", email="zhimanshuk135@gmail.com" }]
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.115,<1",
     "fastmcp>=3.4,<4",
     "mcp>=1.28,<2",
     "pymupdf>=1.24",
