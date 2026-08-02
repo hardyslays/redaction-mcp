@@ -6,17 +6,17 @@ from typing import Annotated
 
 from pydantic import Field
 
-from src.core.models.document import Document
-from src.core.models.errors import RedactionError, ReplacementError
-from src.core.models.redaction import RedactionOptions, RedactionTarget
-from src.core.models.replacement import ReplacementTarget
-from src.core.services.redaction_service import redact_document
-from src.core.services.replacement_service import replace_document
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.errors import RedactionError, ReplacementError
+from redaction_mcp.core.models.redaction import RedactionOptions, RedactionTarget
+from redaction_mcp.core.models.replacement import ReplacementTarget
+from redaction_mcp.core.services.redaction_service import redact_document
+from redaction_mcp.core.services.replacement_service import replace_document
 from starlette.middleware import Middleware
 
-from src.mcp.auth import BearerTokenMiddleware
-from src.mcp.inspection import DocumentInspection, inspect_document as inspect_mcp_document
-from src.server.models import RedactionResponse, ReplacementResponse
+from redaction_mcp.mcp.auth import BearerTokenMiddleware
+from redaction_mcp.mcp.inspection import DocumentInspection, inspect_document as inspect_mcp_document
+from redaction_mcp.server.models import RedactionResponse, ReplacementResponse
 
 try:
     from fastmcp import FastMCP

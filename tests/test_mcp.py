@@ -10,8 +10,8 @@ import pytest
 from fastmcp import Client
 from fastmcp.client.transports.stdio import StdioTransport
 
-from src.core.models.document import Document
-from src.mcp.server import create_mcp_app, redaction_mcp
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.mcp.server import create_mcp_app, redaction_mcp
 
 
 def _pdf_base64() -> str:

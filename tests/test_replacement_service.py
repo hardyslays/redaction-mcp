@@ -8,17 +8,17 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 from pptx.util import Inches
 
-from src.core.engines.pdf_replacement import (
+from redaction_mcp.core.engines.pdf_replacement import (
     _TextStyle,
     _background_color,
     _fontname,
     _replacement_lines,
     replacement_text,
 )
-from src.core.models.document import Document
-from src.core.models.errors import ReplacementError
-from src.core.models.replacement import TextReplacementTarget
-from src.core.services.replacement_service import replace_document
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.errors import ReplacementError
+from redaction_mcp.core.models.replacement import TextReplacementTarget
+from redaction_mcp.core.services.replacement_service import replace_document
 
 
 def pdf_with_text(text: str) -> bytes:

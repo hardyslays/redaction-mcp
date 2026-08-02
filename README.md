@@ -6,32 +6,14 @@ Redaction-MCP is a document redaction that can be used for Sensitive Data Redact
 It is primarily designed to be used by AI agents via MCP adapters to provide document redaction and scrubbing capabilities to intelligent document processing systems using AI agents or agentic workflows.
 
 
-## Scope and status
+## Scope of the project
 
 This project is aimed to be made into a full-fledged document "Sensitive Data Protection" MCP suite focused on inspection, de-identification and de-sensitization of documents. 
 It will support various document formats such as PDF, PPT, DOCX, TXT, etc. The scope of this MCP server is to provide SDP functionalities to the AI agents and Agentic workflows.
 
-### Here is a rough roadmap of the project:
-- [x] Initial Project structure setup
-- [x] Implementation of Core Redaction service
-- [x] Exposure of the services as a Fast API server (for dev testing)
-- [x] PDF document redaction engine implementation
-- [x] DOCX doc redaction engine implementation
-- [x] PPT doc redaction engine implementation
-- [x] MCP server implementation in STDIO mode
-- [x] MCP server implementation in HTTP mode
-- [x] Implementation of Core data replecement service
-- [x] PDF document data replacement engine implementation
-- [x] DOCX doc data replacement engine implementation
-- [x] PPT doc data replacement engine implementation
-- [x] Testing the redaction service for inconsistencies
-- [x] Testing the data replacement service for inconsistencies
+ALso, A VERY IMPROTANT NOTE is that while this project is quite good at providing said capabilities to AI agents, but when talking about production-scenario, organisations often require much specific and customized capabilities which is out of scope of this project. 
 
-### Todos
-- [ ] Improve redaction on edge cases - Multi-line redactions, optimizations on findings, etc.
-- [ ] Improve data replacement on edge cases - Inline replacement, multi-line replacement, optmization of implementation, etc.
-- [ ] Add support for image based document types (TIFF, JPG, PNG).
-
+If you are going to build a SDP tool-set or suite of enterprise level, I would suggest creating a custom capabilities pipeline, as they often see a lot more success than generic SDP suites.
 
 ## Requirements
 

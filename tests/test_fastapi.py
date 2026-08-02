@@ -4,7 +4,7 @@ import asyncio
 import fitz
 import httpx
 
-from src.server.main import app
+from redaction_mcp.server.main import app
 
 
 def sample_pdf() -> bytes:

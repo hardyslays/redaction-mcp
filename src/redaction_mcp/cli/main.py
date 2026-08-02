@@ -3,8 +3,8 @@
 import anyio
 import os
 
-from src.cli.stdio import run_stdio_server
-from src.mcp.server import redaction_mcp
+from redaction_mcp.cli.stdio import run_stdio_server
+from redaction_mcp.mcp.server import redaction_mcp
 
 
 def main() -> None:

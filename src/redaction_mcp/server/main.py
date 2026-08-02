@@ -4,10 +4,10 @@ import uvicorn
 
 from fastapi import FastAPI, HTTPException
 
-from src.core.models.errors import RedactionError, ReplacementError
-from src.core.services.redaction_service import redact_document
-from src.core.services.replacement_service import replace_document
-from src.server.models import RedactionRequest, RedactionResponse, ReplacementRequest, ReplacementResponse
+from redaction_mcp.core.models.errors import RedactionError, ReplacementError
+from redaction_mcp.core.services.redaction_service import redact_document
+from redaction_mcp.core.services.replacement_service import replace_document
+from redaction_mcp.server.models import RedactionRequest, RedactionResponse, ReplacementRequest, ReplacementResponse
 
 app = FastAPI(title="redaction-mcp-fastapi", version="0.1.0")
 

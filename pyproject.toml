@@ -1,11 +1,12 @@
 [project]
 name = "redaction-mcp"
-version = "0.1.0"
-description = "Add your description here"
+version = "0.1.1"
+description = "A MCP server library to provide Document Redaction and Data replacement capabilities to AI Agents"
 readme = "README.md"
 requires-python = ">=3.12"
+authors = [{ name="hardyslays", email="zhimanshuk135@gmail.com" }]
 dependencies = [
-    "fastapi>=0.115",
+    "fastapi>=0.115,<1",
     "fastmcp>=3.4,<4",
     "mcp>=1.28,<2",
     "pymupdf>=1.24",
@@ -14,19 +15,34 @@ dependencies = [
     "python-docx>=1.2.0",
     "python-pptx>=1.0.2",
 ]
+license = "MIT"
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Operating System :: OS Independent",
+]
 
 [project.optional-dependencies]
 dev = ["httpx>=0.27", "pytest>=8.0", "pytest-cov>=5.0"]
 
 [project.scripts]
-redaction-mcp-stdio = "src.cli.main:main"
-redaction-mcp-http = "src.mcp.main:main"
-redaction-fastapi = "src.server.main:main"
+redaction-mcp-stdio = "redaction_mcp.cli.main:main"
+redaction-mcp-http = "redaction_mcp.mcp.main:main"
+redaction-fastapi = "redaction_mcp.server.main:main"
 
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77.0.3"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
-include = ["src*"]
-namespaces = true
+where = ["src"]
+include = ["redaction_mcp*"]
+
+[dependency-groups]
+dev = [
+    "twine>=7.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/hardyslays/redaction-mcp"
+Issues = "https://github.com/hardyslays/redaction-mcp/issues"

@@ -1,13 +1,13 @@
 """Transport-independent document redaction service."""
 
-from src.core.engines.docx_redaction import redact_docx_document
-from src.core.engines.pdf_redaction import redact_pdf_document
-from src.core.engines.pptx_redaction import redact_pptx_document
-from src.core.engines.txt_redaction import redact_txt_document
-from src.core.models.document import Document
-from src.core.models.errors import RedactionError
-from src.core.models.redaction import RedactionOptions, RedactionTarget
-from src.core.services.mime_detection import (
+from redaction_mcp.core.engines.docx_redaction import redact_docx_document
+from redaction_mcp.core.engines.pdf_redaction import redact_pdf_document
+from redaction_mcp.core.engines.pptx_redaction import redact_pptx_document
+from redaction_mcp.core.engines.txt_redaction import redact_txt_document
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.errors import RedactionError
+from redaction_mcp.core.models.redaction import RedactionOptions, RedactionTarget
+from redaction_mcp.core.services.mime_detection import (
     DOCX_MIME_TYPE,
     PDF_MIME_TYPE,
     PPTM_MIME_TYPE,

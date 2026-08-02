@@ -9,8 +9,8 @@ from docx import Document as DocxDocument
 from pydantic import BaseModel, Field
 from pptx import Presentation
 
-from src.core.models.document import Document
-from src.core.services.mime_detection import (
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.services.mime_detection import (
     DOCX_MIME_TYPE,
     PDF_MIME_TYPE,
     PPTM_MIME_TYPE,

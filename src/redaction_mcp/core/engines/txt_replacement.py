@@ -5,10 +5,10 @@ from __future__ import annotations
 import base64
 from pathlib import Path
 
-from src.core.models.document import Document
-from src.core.models.replacement import ReplacementTarget
-from src.core.services.replacement_text import replacement_text
-from src.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.models.document import Document
+from redaction_mcp.core.models.replacement import ReplacementTarget
+from redaction_mcp.core.services.replacement_text import replacement_text
+from redaction_mcp.core.services.text_matching import compile_text_pattern
 
 
 def replace_txt_document(
