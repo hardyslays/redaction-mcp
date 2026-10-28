@@ -11,6 +11,8 @@ PPTX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.p
 PPTM_MIME_TYPE = "application/vnd.ms-powerpoint.presentation.macroEnabled.12"
 PPTM_PACKAGE_MIME_TYPE = "application/vnd.ms-powerpoint.presentation.macroEnabled.main+xml"
 TEXT_MIME_TYPE = "text/plain"
+CSV_MIME_TYPE = "text/csv"
+XLSX_MIME_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
 
 def _office_mime_type(data: bytes) -> str | None:
@@ -21,6 +23,8 @@ def _office_mime_type(data: bytes) -> str | None:
         return None
     if b"wordprocessingml.document.main+xml" in content_types:
         return DOCX_MIME_TYPE
+    if b"spreadsheetml.sheet.main+xml" in content_types:
+        return XLSX_MIME_TYPE
     if b"presentationml.presentation.main+xml" in content_types:
         return PPTX_MIME_TYPE
     if PPTM_PACKAGE_MIME_TYPE.encode() in content_types:
@@ -43,5 +47,7 @@ def detect_mime_type(data: bytes | None = None, filename: str | None = None) -> 
             ".pptx": PPTX_MIME_TYPE,
             ".pptm": PPTM_MIME_TYPE,
             ".txt": TEXT_MIME_TYPE,
+            ".csv": CSV_MIME_TYPE,
+            ".xlsx": XLSX_MIME_TYPE,
         }.get(Path(filename).suffix.lower())
     return None

@@ -20,7 +20,7 @@ from redaction_mcp.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
-from redaction_mcp.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.services.text_matching import compile_text_pattern, replace_text_matches
 
 
 def _text_frames(shapes: object) -> list[object]:
@@ -45,7 +45,9 @@ def _shapes(shapes: object) -> list[object]:
 
 
 def _replacement(text: str, options: RedactionOptions) -> str:
-    return "[REDACT]" if options.redaction_type == "mask" else "*" * len(text)
+    return "[REDACT]" if options.redaction_type == "mask" else "".join(
+        char if char.isspace() else "*" for char in text
+    )
 
 
 def _replace(frame: object, pattern: re.Pattern[str], options: RedactionOptions, limit: int = 0) -> int:
@@ -152,13 +154,20 @@ def redact_pptx_document(
     frames_by_slide = {index: _text_frames(slide.shapes) for index, slide in enumerate(presentation.slides)}
     for target in targets:
         if isinstance(target, TextTarget):
-            pattern = compile_text_pattern(target.values, ignore_case=target.ignore_case, partial_match=target.partial_match)
             selection = target.pages if target.pages is not None else range(len(presentation.slides))
             for index in selection:
                 if not 0 <= index < len(presentation.slides):
                     raise ValueError(f"Slide {index} is out of range (presentation has {len(presentation.slides)} slides)")
                 for frame in frames_by_slide[index]:
-                    _replace(frame, pattern, options)
+                    text, replacements = replace_text_matches(
+                        frame.text,
+                        target.values,
+                        lambda match: _replacement(match.group(), options),
+                        ignore_case=target.ignore_case,
+                        partial_match=target.partial_match,
+                    )
+                    if replacements:
+                        frame.text = text
         elif isinstance(target, RegexTarget):
             flags = re.IGNORECASE if target.ignore_case else 0
             if not target.allow_unicode:
@@ -177,6 +186,8 @@ def redact_pptx_document(
                             break
                     if matched:
                         break
+                if matched:
+                    break
         elif isinstance(target, BoundingBoxTarget):
             for box in target.values:
                 slide = _slides(presentation, [box.page])[0]

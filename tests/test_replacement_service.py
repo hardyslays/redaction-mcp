@@ -1,8 +1,11 @@
 import base64
+import re
+import sys
+from types import SimpleNamespace
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, ZipFile
 
-import fitz
+import pymupdf as fitz
 import pytest
 from docx import Document as DocxDocument
 from pptx import Presentation
@@ -19,6 +22,7 @@ from redaction_mcp.core.models.document import Document
 from redaction_mcp.core.models.errors import ReplacementError
 from redaction_mcp.core.models.replacement import TextReplacementTarget
 from redaction_mcp.core.services.replacement_service import replace_document
+from redaction_mcp.core.services.replacement_text import ReplacementContext, infer_entity_type
 
 
 def pdf_with_text(text: str) -> bytes:
@@ -100,6 +104,104 @@ def test_static_replacement_is_bracketed() -> None:
     assert _replacement_lines("Long\nline", "[SAFE]", static=True) == ["[SA", "FE]"]
 
 
+def test_replacement_size_guard_runs_before_decoding(monkeypatch: pytest.MonkeyPatch) -> None:
+    import redaction_mcp.core.services.replacement_service as service
+
+    document = Document(base64data=base64.b64encode(b"oversize").decode(), filename="source.txt")
+    monkeypatch.setattr(service, "DIRECT_LIMIT", 1)
+
+    def decode(self: Document) -> bytes:
+        raise AssertionError("Oversized content should not be decoded")
+
+    monkeypatch.setattr(Document, "decoded_bytes", decode)
+    result = replace_document(document, [target("PARTIAL", source="over")])
+
+    assert isinstance(result, ReplacementError)
+    assert "16 MiB" in result.message
+
+
+def test_semantic_replacement_infers_structured_types_and_preserves_shape() -> None:
+    context = ReplacementContext()
+    email_target = target("SEMANTIC", source="jane@example.com")
+    email = context.replacement_text("jane@example.com", email_target)
+    assert infer_entity_type("jane@example.com") == "EMAIL"
+    assert re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email)
+    assert abs(len(email) - len("jane@example.com")) <= max(1, round(len("jane@example.com") * 0.15))
+
+    date_target = target("SEMANTIC", source="2020-01-31", entity_type="DATE")
+    assert re.fullmatch(r"\d{4}-\d{2}-\d{2}", context.replacement_text("2020-01-31", date_target))
+
+
+def test_optional_entity_pipeline_loads_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    import redaction_mcp.core.services.replacement_text as service
+
+    loads: list[int] = []
+
+    def load(**kwargs: object):
+        loads.append(1)
+        return lambda value: SimpleNamespace(ents=[SimpleNamespace(label_="PERSON", text=value)])
+
+    monkeypatch.setitem(sys.modules, "en_core_web_sm", SimpleNamespace(load=load))
+    service._english_pipeline.cache_clear()
+    try:
+        assert service.infer_entity_type("Jane Doe") == "NAME"
+        assert service.infer_entity_type("John Doe") == "NAME"
+        assert loads == [1]
+    finally:
+        service._english_pipeline.cache_clear()
+
+
+def test_semantic_replacement_is_stable_and_case_aware_within_context() -> None:
+    context = ReplacementContext()
+    semantic_target = target("SEMANTIC", source="JANE DOE", entity_type="NAME")
+    first = context.replacement_text("JANE DOE", semantic_target)
+
+    assert first == context.replacement_text("JANE DOE", semantic_target)
+    assert first.upper() == first
+    assert abs(len(first) - len("JANE DOE")) <= max(1, round(len("JANE DOE") * 0.15))
+
+    title_case = context.replacement_text("Jane Doe", semantic_target)
+    assert title_case == first.title()
+    assert context.replacement_text("jane doe", semantic_target) == first.lower()
+
+
+@pytest.mark.parametrize("source", ["May 1, 2020", "1/2/2020", "2020-1-2"])
+def test_semantic_dates_keep_source_component_widths(source: str) -> None:
+    generated = replacement_text(source, target("SEMANTIC", source=source, entity_type="DATE"))
+
+    assert len(generated) == len(source)
+    assert re.sub(r"[A-Za-z0-9]", "x", generated) == re.sub(r"[A-Za-z0-9]", "x", source)
+
+
+def test_semantic_address_is_inferred_and_preserves_source_lines() -> None:
+    source = "1234 Elm Street\nSpringfield"
+    semantic_target = target("SEMANTIC", source=source)
+
+    replacement = ReplacementContext().replacement_text(source, semantic_target)
+
+    assert infer_entity_type(source) == "ADDRESS"
+    assert infer_entity_type("1234 Elm Street Springfield") == "ADDRESS"
+    assert len(replacement.splitlines()) == 2
+    assert re.match(r"^\d+\s+", replacement.splitlines()[0])
+    assert replacement != "0000 Xxx Xxxxxx\nXxxxxxxxxxx"
+
+
+def test_semantic_name_and_short_address_preserve_source_shape() -> None:
+    name = "Jane-Doe"
+    generated_name = replacement_text(name, target("SEMANTIC", source=name, entity_type="NAME"))
+    assert re.fullmatch(r"[A-Z][a-z]{3}-[A-Z][a-z]{2}", generated_name)
+    assert generated_name != name
+
+    address = "123 Main St"
+    generated_address = replacement_text(address, target("SEMANTIC", source=address, entity_type="ADDRESS"))
+    assert re.fullmatch(r"\d{3} [A-Z][a-z]{3} St", generated_address)
+    assert generated_address != address
+
+    place = "New-York"
+    generated_place = replacement_text(place, target("SEMANTIC", source=place, entity_type="PLACE"))
+    assert re.fullmatch(r"[A-Z][a-z]{2}-[A-Z][a-z]{3}", generated_place)
+
+
 @pytest.mark.parametrize(
     ("source_font", "flags", "expected"),
     [
@@ -126,8 +228,87 @@ def test_pdf_background_colour_is_extracted_from_source_span_area() -> None:
     pdf.close()
 
 
+def test_pdf_replacement_samples_background_only_for_matched_spans(monkeypatch: pytest.MonkeyPatch) -> None:
+    import redaction_mcp.core.engines.pdf_replacement as engine
+
+    pdf = fitz.open()
+    pdf.new_page().insert_text((72, 72), "secret visible")
+    pdf.new_page().insert_text((72, 72), "ordinary text")
+    source = Document(base64data=base64.b64encode(pdf.tobytes()).decode(), filename="source.pdf")
+    pdf.close()
+    indexed_pages: list[int] = []
+    sampled_pages: list[int] = []
+    original_index = engine._text_index_with_styles
+    original_background = engine._background_color
+
+    def index(page: fitz.Page):
+        indexed_pages.append(page.number)
+        return original_index(page)
+
+    def background(page: fitz.Page, rect: fitz.Rect):
+        sampled_pages.append(page.number)
+        return original_background(page, rect)
+
+    monkeypatch.setattr(engine, "_text_index_with_styles", index)
+    monkeypatch.setattr(engine, "_background_color", background)
+    result = replace_document(source, [
+        target("STATIC", source="missing", static_text="SAFE"),
+        target("STATIC", source="secret", static_text="SAFE"),
+    ])
+
+    assert isinstance(result, Document)
+    assert indexed_pages == [0, 1]
+    assert sampled_pages == [0]
+
+
+def test_pdf_replacement_finishes_each_page_before_indexing_next(monkeypatch: pytest.MonkeyPatch) -> None:
+    import redaction_mcp.core.engines.pdf_replacement as engine
+
+    pdf = fitz.open()
+    for _ in range(2):
+        page = pdf.new_page()
+        page.insert_text((72, 72), "secret")
+        page.insert_text((72, 72), "public")
+    source = Document(base64data=base64.b64encode(pdf.tobytes()).decode(), filename="source.pdf")
+    pdf.close()
+    events: list[tuple[str, int]] = []
+    original_index = engine._text_index_with_styles
+    original_restore = engine._restore_characters
+
+    def index(page: fitz.Page):
+        events.append(("index", page.number))
+        return original_index(page)
+
+    def restore(page: fitz.Page, *args: object):
+        events.append(("restore", page.number))
+        return original_restore(page, *args)
+
+    monkeypatch.setattr(engine, "_text_index_with_styles", index)
+    monkeypatch.setattr(engine, "_restore_characters", restore)
+    result = replace_document(source, [target("STATIC", source="secret", static_text="SAFE")])
+
+    assert isinstance(result, Document)
+    assert events == [("index", 0), ("restore", 0), ("index", 1), ("restore", 1)]
+
+
 def test_regex_replacement_preserves_character_pattern_without_source_text() -> None:
     assert replacement_text("AB-129 z", target("REGEX")) == "BC-230 a"
+
+
+def test_replacement_fallbacks_do_not_return_unicode_source_letters() -> None:
+    source = "Élodie 张伟 ١٢"
+    regex_value = replacement_text(source, target("REGEX", source=source))
+    generic_value = replacement_text(source, target("SEMANTIC", source=source, entity_type="GENERIC"))
+
+    assert regex_value != source
+    assert generic_value != source
+    assert "张伟" not in regex_value and "张伟" not in generic_value
+    assert regex_value[6] == generic_value[6] == " "
+
+
+def test_semantic_fallback_changes_already_dummy_shaped_source() -> None:
+    source = "xxx-000"
+    assert replacement_text(source, target("SEMANTIC", source=source, entity_type="GENERIC")) != source
 
 
 def test_pdf_replacement_permanently_removes_original_and_inserts_static_value() -> None:
@@ -142,6 +323,25 @@ def test_pdf_replacement_permanently_removes_original_and_inserts_static_value()
     text = output[0].get_text()
     assert "Jane Doe" not in text
     assert "[REDACTED]" in text
+    output.close()
+
+
+def test_pdf_replacement_removes_every_styled_span_of_one_match() -> None:
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "Jane ", fontname="helv")
+    next_x = 72 + fitz.get_text_length("Jane ", fontname="helv", fontsize=11)
+    page.insert_text((next_x, 72), "Doe", fontname="hebo")
+    source = Document(base64data=base64.b64encode(pdf.tobytes()).decode(), filename="source.pdf")
+    pdf.close()
+
+    result = replace_document(source, [target("STATIC", source="Jane Doe", static_text="SAFE")])
+
+    assert isinstance(result, Document)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    text = output[0].get_text()
+    assert "Jane" not in text and "Doe" not in text
+    assert "[SAFE]" in text
     output.close()
 
 
@@ -164,6 +364,55 @@ def test_pdf_replacement_preserves_source_baseline_font_style_size_and_colour() 
     assert replacement["size"] == pytest.approx(16)
     assert replacement["color"] == 0x336699
     assert replacement["origin"][1] == pytest.approx(100)
+    output.close()
+
+
+def test_pdf_replacement_preserves_rotation_and_overlapping_non_target_text() -> None:
+    pdf = fitz.open()
+    page = pdf.new_page(width=300, height=300)
+    origin = fitz.Point(150, 220)
+    page.insert_text(origin, "secret", fontsize=24, morph=(origin, fitz.Matrix(45)))
+    page.insert_text((136, 170), "K", fontsize=10)
+    data = pdf.tobytes()
+    pdf.close()
+
+    result = replace_document(
+        Document(base64data=base64.b64encode(data).decode(), filename="source.pdf"),
+        [target("STATIC", source="secret", static_text="SAFE")],
+    )
+
+    assert not isinstance(result, ReplacementError)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    assert "secret" not in output[0].get_text()
+    assert output[0].get_text().count("K") == 1
+    lines = [line for block in output[0].get_text("rawdict")["blocks"] for line in block.get("lines", [])]
+    replacement = next(
+        line for line in lines if "[SAFE]" in "".join(char["c"] for span in line["spans"] for char in span["chars"])
+    )
+    assert replacement["dir"] == pytest.approx((2 ** -0.5, -(2 ** -0.5)), abs=0.01)
+    output.close()
+
+
+def test_pdf_semantic_replacement_handles_multiline_address_from_single_line_target() -> None:
+    pdf = fitz.open()
+    page = pdf.new_page()
+    page.insert_text((72, 72), "1234 Elm Street")
+    page.insert_text((72, 96), "Springfield")
+    data = pdf.tobytes()
+    pdf.close()
+
+    result = replace_document(
+        Document(base64data=base64.b64encode(data).decode(), filename="source.pdf"),
+        [target("SEMANTIC", source="1234 Elm Street Springfield")],
+    )
+
+    assert not isinstance(result, ReplacementError)
+    output = fitz.open(stream=base64.b64decode(result.base64data), filetype="pdf")
+    lines = [line.strip() for line in output[0].get_text().splitlines() if line.strip()]
+    assert len(lines) == 2
+    assert lines[0] != "1234 Elm Street"
+    assert lines[1] != "Springfield"
+    assert re.match(r"^\d+\s+", lines[0])
     output.close()
 
 
@@ -310,14 +559,13 @@ def test_pptx_replacement_handles_multiline_text_and_slide_filter() -> None:
     assert output.slides[1].shapes[0].text == "Jane Doe"
 
 
-def test_replacement_rejects_unsupported_document() -> None:
+def test_csv_replacement_is_supported() -> None:
     result = replace_document(
         Document(base64data=base64.b64encode(b"text").decode(), filename="note.csv"),
         [target("PARTIAL")],
     )
 
-    assert isinstance(result, ReplacementError)
-    assert result.message == "Only PDF, DOCX, PPTX, PPTM, and TXT documents are currently supported for data replacement"
+    assert isinstance(result, Document)
 
 
 @pytest.mark.parametrize(

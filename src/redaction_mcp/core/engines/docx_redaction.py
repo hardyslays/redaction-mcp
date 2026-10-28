@@ -22,7 +22,7 @@ from redaction_mcp.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
-from redaction_mcp.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.services.text_matching import compile_text_pattern, replace_text_matches
 
 
 def _paragraphs_in_table(table: Table) -> list[Paragraph]:
@@ -48,7 +48,9 @@ def _paragraphs(document: DocxFile) -> list[Paragraph]:
 
 
 def _replacement(text: str, options: RedactionOptions) -> str:
-    return "[REDACT]" if options.redaction_type == "mask" else "*" * len(text)
+    return "[REDACT]" if options.redaction_type == "mask" else "".join(
+        char if char.isspace() else "*" for char in text
+    )
 
 
 def _replace(paragraph: Paragraph, pattern: re.Pattern[str], options: RedactionOptions, limit: int = 0) -> int:
@@ -60,10 +62,18 @@ def _replace(paragraph: Paragraph, pattern: re.Pattern[str], options: RedactionO
 
 
 def _redact_text(paragraphs: list[Paragraph], target: TextTarget, options: RedactionOptions) -> None:
-    """Compile once and visit each paragraph once for a text target."""
-    pattern = compile_text_pattern(target.values, ignore_case=target.ignore_case, partial_match=target.partial_match)
+    """Visit each paragraph once for a normalized text target."""
     for paragraph in paragraphs:
-        _replace(paragraph, pattern, options)
+        text, replacements = replace_text_matches(
+            paragraph.text,
+            target.values,
+            lambda match: _replacement(match.group(), options),
+            ignore_case=target.ignore_case,
+            partial_match=target.partial_match,
+        )
+        if replacements:
+            paragraph.clear()
+            paragraph.add_run(text)
 
 
 def _redact_regex(paragraphs: list[Paragraph], target: RegexTarget, options: RedactionOptions) -> None:

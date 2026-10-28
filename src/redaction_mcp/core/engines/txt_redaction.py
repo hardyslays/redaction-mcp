@@ -15,7 +15,7 @@ from redaction_mcp.core.models.redaction import (
     RegexTarget,
     TextTarget,
 )
-from redaction_mcp.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.services.text_matching import replace_text_matches
 
 
 def _validate_pages(pages: list[int] | None) -> None:
@@ -24,11 +24,11 @@ def _validate_pages(pages: list[int] | None) -> None:
 
 
 def _asterisks(text: str) -> str:
-    return "*" * len(text)
+    return "".join(char if char.isspace() else "*" for char in text)
 
 
 def _page_asterisks(text: str) -> str:
-    return "".join(char if char.isspace() else "*" for char in text)
+    return _asterisks(text)
 
 
 def redact_txt_document(
@@ -45,10 +45,13 @@ def redact_txt_document(
             source = _page_asterisks(source)
         elif isinstance(target, TextTarget):
             _validate_pages(target.pages)
-            pattern = compile_text_pattern(
-                target.values, ignore_case=target.ignore_case, partial_match=target.partial_match
+            source, _ = replace_text_matches(
+                source,
+                target.values,
+                lambda match: _asterisks(match.group()),
+                ignore_case=target.ignore_case,
+                partial_match=target.partial_match,
             )
-            source = pattern.sub(lambda match: _asterisks(match.group()), source)
         elif isinstance(target, RegexTarget):
             _validate_pages(target.pages)
             flags = re.IGNORECASE if target.ignore_case else 0

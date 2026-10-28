@@ -1,6 +1,7 @@
 """In-memory document model shared by every transport."""
 
 import base64
+import binascii
 
 from pydantic import BaseModel, ConfigDict, PrivateAttr, field_validator
 
@@ -19,8 +20,13 @@ class Document(BaseModel):
     @classmethod
     def valid_base64(cls, value: str) -> str:
         try:
-            base64.b64decode(value, validate=True)
-        except ValueError as exc:
+            chunk_size = 1024 * 1024  # divisible by four base64 characters
+            for start in range(0, len(value), chunk_size):
+                chunk = value[start:start + chunk_size]
+                if start + chunk_size < len(value) and "=" in chunk:
+                    raise ValueError("padding before the end of base64data")
+                base64.b64decode(chunk, validate=True)
+        except (ValueError, binascii.Error) as exc:
             raise ValueError("base64data must be valid base64") from exc
         return value
 
