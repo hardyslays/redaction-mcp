@@ -86,10 +86,32 @@ uv build
 See [DEVELOPMENT.md](DEVELOPMENT.md) for request schemas and implementation
 details.
 
+## Publishing
+
+The [PyPI workflow](.github/workflows/publish-to-pypi.yml) runs the tests,
+builds and checks the distributions, then publishes them when a pull request
+is merged into a `release-<major>.<minor>.<patch>` branch. The branch version
+must match `pyproject.toml`. It uses PyPI Trusted Publishing, so no PyPI API
+token is needed.
+
+Before the first release, create a GitHub environment named `pypi` with a
+deployment branch rule for `release-*`. In the existing
+[redaction-mcp PyPI project](https://pypi.org/manage/project/redaction-mcp/publishing/),
+add a GitHub Actions Trusted Publisher with owner `hardyslays`, repository
+`redaction-mcp`, workflow filename `publish-to-pypi.yml`, and environment
+`pypi`.
+
+For each release, set a new, unused version in `pyproject.toml` and create a
+matching branch from `main` (for example, `release-0.2.0` for version `0.2.0`):
+
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git switch main
+git pull --ff-only origin main
+git switch -c release-0.2.0
+git push -u origin release-0.2.0
 ```
 
-The tag must point to a commit that already contains this workflow. A version
-that has already been uploaded to PyPI cannot be uploaded again.
+The branch must already contain the workflow. Open a pull request targeting
+that release branch and merge it when ready. Creating the branch alone does not
+publish. Publish only once from each release branch; PyPI does not permit
+uploading the same version again.

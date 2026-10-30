@@ -1,38 +1,46 @@
 name: Publish to PyPI
 
 on:
-  push:
-    tags:
-      - "v*"
+  pull_request:
+    types: [closed]
+    branches:
+      - "release-*"
 
 permissions:
   contents: read
 
 jobs:
   build:
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
         with:
           persist-credentials: false
+          ref: ${{ github.sha }}
       - uses: actions/setup-python@v6
         with:
           python-version: "3.12.8"
-      - name: Check release tag
+      - name: Check release branch and version
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_BRANCH: ${{ github.event.pull_request.base.ref }}
         run: |
           python - <<'PY'
           import os
+          import re
           import tomllib
 
           with open("pyproject.toml", "rb") as project_file:
               project = tomllib.load(project_file)["project"]
 
           assert project["name"] == "redaction-mcp", "Unexpected package name"
-          expected_tag = f"v{project['version']}"
-          assert os.environ["RELEASE_TAG"] == expected_tag, (
-              f"Tag must be {expected_tag} for this version"
+          release_branch = os.environ["RELEASE_BRANCH"]
+          assert re.fullmatch(r"release-\d+\.\d+\.\d+", release_branch), (
+              "Release branch must be named release-<major>.<minor>.<patch>"
+          )
+          expected_branch = f"release-{project['version']}"
+          assert release_branch == expected_branch, (
+              f"Branch must be {expected_branch} for this version"
           )
           PY
       - name: Install test and build dependencies
