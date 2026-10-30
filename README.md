@@ -86,26 +86,6 @@ uv build
 See [DEVELOPMENT.md](DEVELOPMENT.md) for request schemas and implementation
 details.
 
-## Publishing
-
-The [PyPI workflow](.github/workflows/publish-to-pypi.yml) runs the tests,
-builds and checks the distributions, then publishes them when a `v<version>`
-tag is pushed. It uses PyPI Trusted Publishing, so no PyPI API token is needed.
-
-Before the first automated release:
-
-1. Create a GitHub environment named `pypi` in this repository. Restrict it to
-   tags matching `v*` and configure required reviewers if you want an approval
-   before each upload.
-2. In the existing [redaction-mcp PyPI project](https://pypi.org/manage/project/redaction-mcp/publishing/),
-   add a GitHub Actions Trusted Publisher with owner `hardyslays`, repository
-   `redaction-mcp`, workflow filename `publish-to-pypi.yml`, and environment
-   `pypi`.
-
-For each release, set a new, unused version in `pyproject.toml`, commit it with
-the workflow, and push a matching tag (for example, `v0.2.0` for version
-`0.2.0`):
-
 ```bash
 git tag v0.2.0
 git push origin v0.2.0
