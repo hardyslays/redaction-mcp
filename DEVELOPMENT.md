@@ -8,16 +8,16 @@ matching behavior, or transports.
 
 The project provides permanent document redaction and text replacement through
 one transport-independent core. The current supported input formats are PDF,
-DOCX, PPTX, PPTM, and UTF-8 TXT. Every successful operation returns the output
-as base64-encoded content.
+DOCX, PPTX, PPTM, UTF-8 TXT, UTF-8/UTF-8-BOM CSV, and XLSX. Direct operations
+return base64 output; durable jobs provide chunked upload and download.
 
-| Operation | PDF | DOCX | PPTX/PPTM | TXT |
-| --- | --- | --- | --- | --- |
-| Redact literal text | Yes | Yes | Yes | Yes |
-| Redact regular expressions | Yes | Yes | Yes | Yes |
-| Redact normalized bounding boxes | Yes | Approximate layout | Approximate layout | No |
-| Redact a full page/slide | Yes | No | Yes | Logical page `0` |
-| Replace literal text | Yes | Yes | Yes | Yes |
+| Operation | PDF | DOCX | PPTX/PPTM | TXT | CSV | XLSX |
+| --- | --- | --- | --- | --- | --- | --- |
+| Redact literal text | Yes | Yes | Yes | Yes | Yes | Yes |
+| Redact regular expressions | Yes | Yes | Yes | Yes | Yes | Yes |
+| Redact normalized bounding boxes | Yes | Approximate | Approximate | No | No | No |
+| Redact a full page/slide | Yes | No | Yes | Logical page `0` | No | No |
+| Replace literal text | Yes | Yes | Yes | Yes | Yes | Yes |
 
 PPTM files are accepted as input but are saved by `python-pptx` as a PPTX
 output. Legacy `.ppt`, `.ppsx`, and non-UTF-8 text files are not supported.
@@ -68,8 +68,9 @@ tests/                             # Unit and transport tests
 
 ## Architecture
 
-FastAPI and MCP use the same base64-only `Document` model and the same core
-services. Transport code validates the request, calls a service, and translates
+FastAPI and MCP use the same `Document` model and core services for direct
+requests. Durable jobs store chunked files and SQLite state on the local host.
+Transport code validates the request, calls a service, and translates
 a typed core error into its protocol's error behavior. No transport resolves
 agent-provided filesystem paths or URLs.
 
@@ -145,7 +146,7 @@ slide numbers are zero-based.
 ```
 
 Literal values are escaped before matching. By default they must not be
-adjacent to ASCII letters or digits; set `partial_match` to `true` to permit
+adjacent to Unicode letters or digits; set `partial_match` to `true` to permit
 matches inside a larger alphanumeric value. `ignore_case` defaults to `false`.
 
 ### Regular-expression target
@@ -211,7 +212,7 @@ an asterisk.
 applies PDF annotations; setting it to `false` keeps reviewable PDF
 annotations. `redaction_type` is `asterisks` by default or `mask` (`[REDACT]`)
 for DOCX/PPTX text replacements. TXT always uses asterisks and ignores these
-options.
+options. Asterisk redaction preserves whitespace inside matched text.
 
 ## Replacement contract
 
@@ -236,6 +237,7 @@ Replacement targets currently support literal text only:
 | `PARTIAL` | Masks non-whitespace characters while retaining the last 2 or 4 visible characters. |
 | `STATIC` | Inserts `[static_text]`; `static_text` is required only for this type. |
 | `REGEX` | Generates deterministic dummy text by rotating letters and digits one position. |
+| `SEMANTIC` | Generates stable entity-aware values using Faker and optional `entity_type`. |
 
 Replacement uses the same literal matching rules as a redaction text target.
 PDF replacement removes the source text with redactions, then inserts the
@@ -262,17 +264,30 @@ When adding another document type, implement both engines if the feature is
 intended to be supported for redaction and replacement, add MIME detection,
 route it in both services, and cover its success and unsupported-target cases.
 
+## Durable jobs
+
+Direct requests are limited to 16 MiB decoded. Larger PDF, CSV, and Office inputs use durable jobs:
+create an upload, send sequential chunks up to 1 MiB, submit the operation,
+poll its status, and download result ranges. FastAPI exposes `/uploads` and
+`/jobs`; MCP exposes the equivalent six job tools. Job state is stored in
+SQLite and files are kept under `REDACTION_STORAGE_PATH` for 24 hours by
+default. PDF jobs use file-backed PyMuPDF processing one page at a time, and
+CSV jobs stream rows.
+Office files remain bounded by a 32 MiB input limit and archive expansion
+checks because their structure-preserving editors load the package in memory.
+TXT jobs retain the 16 MiB direct-processing limit.
+
 ## Running transports
 
 ```bash
 # FastAPI: http://127.0.0.1:8080/docs
-uv run redaction-fastapi
+redaction-fastapi
 
 # MCP launched as a local subprocess
-uv run redaction-mcp-stdio
+redaction-mcp-stdio
 
 # Streamable HTTP MCP: http://127.0.0.1:8000/mcp
-uv run redaction-mcp-http
+redaction-mcp-http
 ```
 
 Set `MCP_HOST` and `MCP_PORT` to configure the HTTP MCP bind address and port.

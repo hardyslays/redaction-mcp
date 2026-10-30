@@ -1,16 +1,22 @@
 import asyncio
 import base64
+import importlib
 import json
+from io import BytesIO
 import sys
 from pathlib import Path
 
-import fitz
+import pymupdf as fitz
 import httpx
 import pytest
+from docx import Document as DocxDocument
 from fastmcp import Client
 from fastmcp.client.transports.stdio import StdioTransport
+from pptx import Presentation
+from pptx.util import Inches
 
 from redaction_mcp.core.models.document import Document
+from redaction_mcp.mcp.inspection import inspect_document
 from redaction_mcp.mcp.server import create_mcp_app, redaction_mcp
 
 
@@ -30,7 +36,10 @@ def _document() -> dict[str, str]:
 def test_mcp_tools_publish_flat_agent_facing_contract() -> None:
     async def verify() -> None:
         tools = {tool.name: tool for tool in await redaction_mcp.list_tools()}
-        assert set(tools) == {"inspect_document", "redact", "replace"}
+        assert set(tools) == {
+            "inspect_document", "redact", "replace", "create_upload", "upload_chunk",
+            "submit_job", "get_job", "get_result_chunk", "delete_job",
+        }
         assert tools["redact"].parameters["required"] == ["document", "targets"]
         assert "request" not in tools["redact"].parameters["properties"]
         assert tools["redact"].output_schema is not None
@@ -44,16 +53,64 @@ def test_document_rejects_non_base64_sources(source: dict[str, str]) -> None:
         Document.model_validate(source)
 
 
+def test_inspection_includes_docx_table_and_header_text() -> None:
+    source = DocxDocument()
+    source.add_paragraph("body")
+    source.add_table(rows=1, cols=1).cell(0, 0).text = "table secret"
+    source.sections[0].header.paragraphs[0].text = "header secret"
+    output = BytesIO()
+    source.save(output)
+    document = Document(base64data=base64.b64encode(output.getvalue()).decode(), filename="source.docx")
+
+    result = inspect_document(document, 100)
+
+    assert "body" in result.pages[0].text
+    assert "table secret" in result.pages[0].text
+    assert "header secret" in result.pages[0].text
+
+
+def test_inspection_includes_pptx_table_text_and_stops_at_limit() -> None:
+    source = Presentation()
+    first = source.slides.add_slide(source.slide_layouts[6])
+    first.shapes.add_table(1, 1, Inches(1), Inches(1), Inches(3), Inches(1)).table.cell(0, 0).text = "table secret"
+    second = source.slides.add_slide(source.slide_layouts[6])
+    second.shapes.add_textbox(Inches(1), Inches(1), Inches(3), Inches(1)).text = "later"
+    output = BytesIO()
+    source.save(output)
+    document = Document(base64data=base64.b64encode(output.getvalue()).decode(), filename="source.pptx")
+
+    result = inspect_document(document, 5)
+
+    assert result.pages[0].text == "table"
+    assert result.truncated is True
+    assert len(result.pages) == 1
+
+
+def test_inspection_keeps_multiline_csv_cell_and_rejects_oversize(monkeypatch: pytest.MonkeyPatch) -> None:
+    document = Document(
+        base64data=base64.b64encode(b'name,address\nJane,"123 Main\nStreet"\n').decode(), filename="people.csv"
+    )
+    assert "Jane | 123 Main\nStreet" in inspect_document(document, 100).pages[0].text
+
+    import redaction_mcp.mcp.inspection as inspection
+    monkeypatch.setattr(inspection, "DIRECT_LIMIT", 1)
+    with pytest.raises(ValueError, match="16 MiB"):
+        inspect_document(document, 100)
+
+
 def test_stdio_mcp_initializes_discovers_and_invokes_tools() -> None:
     async def verify() -> None:
         transport = StdioTransport(
             command=sys.executable,
-            args=["-m", "src.cli.main"],
+            args=["-m", "redaction_mcp.cli.main"],
             cwd=str(Path(__file__).parents[1]),
             keep_alive=False,
         )
         async with Client(transport, init_timeout=10) as client:
-            assert {tool.name for tool in await client.list_tools()} == {"inspect_document", "redact", "replace"}
+            assert {tool.name for tool in await client.list_tools()} == {
+                "inspect_document", "redact", "replace", "create_upload", "upload_chunk",
+                "submit_job", "get_job", "get_result_chunk", "delete_job",
+            }
             inspection = await client.call_tool("inspect_document", {"document": _document()}, timeout=10)
             assert inspection.data.pages[0].text == "secret visible\n"
             result = await client.call_tool(
@@ -104,7 +161,10 @@ def test_http_mcp_initializes_discovers_and_invokes_tools() -> None:
                     json={"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}},
                 )
                 tools = _sse_data(listed)["result"]["tools"]
-                assert {tool["name"] for tool in tools} == {"inspect_document", "redact", "replace"}
+                assert {tool["name"] for tool in tools} == {
+                    "inspect_document", "redact", "replace", "create_upload", "upload_chunk",
+                    "submit_job", "get_job", "get_result_chunk", "delete_job",
+                }
                 called = await client.post(
                     "/mcp",
                     headers=session_headers,
@@ -179,6 +239,15 @@ def test_http_mcp_bearer_token_protects_the_endpoint() -> None:
                 assert response.status_code == 200
 
     asyncio.run(verify())
+
+
+def test_http_mcp_requires_token_for_non_loopback_bind(monkeypatch: pytest.MonkeyPatch) -> None:
+    launcher = importlib.import_module("redaction_mcp.mcp.main")
+    monkeypatch.setenv("MCP_HOST", "0.0.0.0")
+    monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
+
+    with pytest.raises(RuntimeError, match="MCP_AUTH_TOKEN"):
+        launcher.main()
 
 
 def _sse_data(response: httpx.Response) -> dict:

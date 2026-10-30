@@ -3,27 +3,42 @@
 from __future__ import annotations
 
 import base64
+from collections import Counter
 from dataclasses import dataclass
+from math import atan2, degrees
 from pathlib import Path
 import re
 
-import fitz
+import pymupdf as fitz
 
 from redaction_mcp.core.models.document import Document
-from redaction_mcp.core.engines.pdf_redaction import _match_rectangles
+from redaction_mcp.core.engines.pdf_redaction import (
+    _CharacterPosition,
+    _RenderableCharacter,
+    _base14_fontname,
+    _fill,
+    _match_regions,
+    _renderable_characters,
+    _restoration_candidates,
+    _restore_characters,
+    _tight_char_quad,
+)
 from redaction_mcp.core.models.replacement import ReplacementTarget
-from redaction_mcp.core.services.replacement_text import replacement_text
-from redaction_mcp.core.services.text_matching import compile_text_pattern
+from redaction_mcp.core.services.replacement_text import ReplacementContext, replacement_text
+from redaction_mcp.core.services.text_matching import TextMatch, find_text_matches
 
 
 def _replacement_lines(original: str, replacement: str, static: bool) -> list[str]:
     """Keep line breaks aligned with a source phrase that spans PDF lines."""
     lines = original.splitlines()
     if len(lines) <= 1:
-        return [replacement]
+        return [" ".join(replacement.splitlines())]
+    replacement_lines = replacement.splitlines()
+    if not static and len(replacement_lines) == len(lines):
+        return replacement_lines
     if not static:
-        return replacement.splitlines()
-    # A static marker has no natural line breaks; split it in source-line proportions.
+        replacement = " ".join(replacement_lines)
+    # Split a single generated value in the source line proportions.
     weights = [max(1, len(line)) for line in lines]
     total = sum(weights)
     result: list[str] = []
@@ -46,15 +61,17 @@ class _TextStyle:
     flags: int
     color: tuple[float, float, float]
     baseline: fitz.Point
+    direction: tuple[float, float] = (1.0, 0.0)
     background: tuple[float, float, float] | None = None
+    span_bbox: fitz.Rect | None = None
 
 
 def _rgb(color: int) -> tuple[float, float, float]:
     return tuple(((color >> shift) & 255) / 255 for shift in (16, 8, 0))  # type: ignore[return-value]
 
 
-def _background_color(page: fitz.Page, rect: fitz.Rect) -> tuple[float, float, float] | None:
-    """Estimate the surrounding page colour from eight near-edge span samples."""
+def _background_color(page: fitz.Page, rect: fitz.Rect) -> tuple[float, float, float]:
+    """Estimate the surrounding colour using the dominant bucketed edge pixel."""
     samples: list[tuple[int, int, int]] = []
     inset = min(0.25, rect.width / 8, rect.height / 8)
     middle_x = (rect.x0 + rect.x1) / 2
@@ -72,15 +89,15 @@ def _background_color(page: fitz.Page, rect: fitz.Rect) -> tuple[float, float, f
         clip = fitz.Rect(point[0] - 0.25, point[1] - 0.25, point[0] + 0.25, point[1] + 0.25) & page.rect
         if clip.is_empty:
             continue
-        pixmap = page.get_pixmap(clip=clip, alpha=False)
+        pixmap = page.get_pixmap(clip=clip, alpha=False, annots=False)
         if pixmap.samples:
             pixels = list(zip(*(iter(pixmap.samples),) * pixmap.n))
-            samples.append(tuple(sum(pixel[index] for pixel in pixels) // len(pixels) for index in range(3)))
+            samples.extend(tuple(pixel[:3]) for pixel in pixels)
     if not samples:
-        return None
-    return tuple(
-        sum(sample[index] for sample in samples) / (255 * len(samples)) for index in range(3)
-    )  # type: ignore[return-value]
+        return (1.0, 1.0, 1.0)
+    buckets = Counter(tuple(round(channel / 4) * 4 for channel in sample) for sample in samples)
+    dominant = buckets.most_common(1)[0][0]
+    return tuple(min(channel, 255) / 255 for channel in dominant)  # type: ignore[return-value]
 
 
 def _fontname(style: _TextStyle) -> str:
@@ -90,43 +107,34 @@ def _fontname(style: _TextStyle) -> str:
     Mapping the family and bold/italic traits gives a reliable rendering fallback
     for common sans, serif, monospaced, Symbol, and Dingbats fonts.
     """
-    source = style.font.lower().replace("-", " ")
-    bold = bool(style.flags & 16) or any(token in source for token in ("bold", "black", "semibold", "demi"))
-    italic = bool(style.flags & 2) or any(token in source for token in ("italic", "oblique", "slanted"))
-    if "symbol" in source:
-        return "symbol"
-    if "dingbat" in source:
-        return "zapfdingbats"
-    if any(token in source for token in ("courier", "mono", "consolas", "menlo", "fixed")):
-        family = ("cour", "cobo", "coit", "cobi")
-    elif any(token in source for token in (
-        "times", "serif", "roman", "georgia", "cambria", "garamond", "baskerville", "palatino",
-    )):
-        family = ("tiro", "tibo", "tiit", "tibi")
-    else:
-        # Arial, Helvetica, Calibri, Verdana, Tahoma, and most embedded fonts are sans-serif.
-        family = ("helv", "hebo", "heit", "hebi")
-    return family[(2 if italic else 0) + (1 if bold else 0)]
+    return _base14_fontname(style.font, style.flags)
 
 
-def _text_index_with_styles(page: fitz.Page) -> tuple[str, list[tuple[int, fitz.Rect] | None], list[_TextStyle | None]]:
+def _text_index_with_styles(page: fitz.Page) -> tuple[str, list[_CharacterPosition | None], list[_TextStyle | None]]:
     """Return the redaction text index together with source span appearance data."""
     text: list[str] = []
-    positions: list[tuple[int, fitz.Rect] | None] = []
+    positions: list[_CharacterPosition | None] = []
     styles: list[_TextStyle | None] = []
     line_number = 0
     for block in page.get_text("rawdict")["blocks"]:
         for line in block.get("lines", []):
-            for span in line["spans"]:
+            for span_number, span in enumerate(line["spans"]):
                 color = _rgb(span.get("color", 0))
-                background = _background_color(page, fitz.Rect(span["bbox"]))
+                span_bbox = fitz.Rect(span["bbox"])
                 for char in span.get("chars", []):
                     text.append(char["c"])
-                    positions.append((line_number, fitz.Rect(char["bbox"])))
+                    positions.append(
+                        _CharacterPosition(
+                            line=line_number,
+                            span=span_number,
+                            rect=fitz.Rect(char["bbox"]),
+                            quad=_tight_char_quad(line["dir"], span, char),
+                        )
+                    )
                     styles.append(
                         _TextStyle(
                             size=span["size"], font=span["font"], flags=span.get("flags", 0), color=color,
-                            baseline=fitz.Point(char["origin"]), background=background,
+                            baseline=fitz.Point(char["origin"]), direction=tuple(line["dir"]), span_bbox=span_bbox,
                         )
                     )
             text.append("\n")
@@ -137,22 +145,22 @@ def _text_index_with_styles(page: fitz.Page) -> tuple[str, list[tuple[int, fitz.
 
 
 def _match_styles(
-    match: re.Match[str], positions: list[tuple[int, fitz.Rect] | None], styles: list[_TextStyle | None]
+    match: re.Match[str] | TextMatch, positions: list[_CharacterPosition | None], styles: list[_TextStyle | None]
 ) -> list[_TextStyle]:
-    """Use the first character's span data for each matched visual line."""
+    """Use the first character's style for each matched source span."""
     result: list[_TextStyle] = []
-    current_line: int | None = None
+    current_key: tuple[int, int] | None = None
     for position, style in zip(positions[match.start():match.end()], styles[match.start():match.end()]):
         if position is None:
-            current_line = None
-        elif position[0] != current_line:
-            current_line = position[0]
+            current_key = None
+        elif (position.line, position.span) != current_key:
+            current_key = (position.line, position.span)
             if style is not None:
                 result.append(style)
     return result
 
 
-def _insert(page: fitz.Page, rect: fitz.Rect, value: str, style: _TextStyle) -> None:
+def _insert(page: fitz.Page, quad: fitz.Quad, value: str, style: _TextStyle) -> None:
     """Insert on the original baseline using the source font traits and colour."""
     if not value:
         return
@@ -160,51 +168,115 @@ def _insert(page: fitz.Page, rect: fitz.Rect, value: str, style: _TextStyle) -> 
     size = style.size
     try:
         width = fitz.get_text_length(value, fontname=fontname, fontsize=size)
-        if width > rect.width:
-            size = max(4.0, size * rect.width / width)
+        available_width = max(0.0, quad.width)
+        if width > available_width:
+            size = max(style.size * 0.8, size * available_width / width)
     except (RuntimeError, ValueError):
         fontname = "helv"
     # The matching redaction uses the sampled background colour, so the replacement
     # does not sit on PyMuPDF's default white redaction fill.
     # Using the source baseline prevents the usual top-aligned textbox appearance.
-    page.insert_text(style.baseline, value, fontsize=size, fontname=fontname, color=style.color)
+    angle = degrees(atan2(-style.direction[1], style.direction[0])) % 360
+    morph = None if min(angle, 360 - angle) < 0.01 else (style.baseline, fitz.Matrix(angle))
+    page.insert_text(
+        style.baseline,
+        value,
+        fontsize=size,
+        fontname=fontname,
+        color=style.color,
+        morph=morph,
+    )
 
 
-def replace_pdf_document(document: Document, targets: list[ReplacementTarget], *, data: bytes | None = None) -> Document:
+def replace_pdf_document(
+    document: Document,
+    targets: list[ReplacementTarget],
+    *,
+    data: bytes | None = None,
+    source_path: Path | None = None,
+    output_path: Path | None = None,
+) -> Document:
     """Permanently remove source text, then insert replacement text at its location."""
     if data is None and document.base64data is None:
         raise ValueError("PDF engine requires in-memory document base64data")
-    pdf = fitz.open(stream=data if data is not None else document.decoded_bytes(), filetype="pdf")
-    insertions: list[tuple[int, fitz.Rect, str, _TextStyle]] = []
+    pdf = fitz.open(source_path) if source_path is not None else fitz.open(
+        stream=data if data is not None else document.decoded_bytes(), filetype="pdf"
+    )
+    context = ReplacementContext()
     try:
         for target in targets:
-            page_numbers = target.pages if target.pages is not None else range(pdf.page_count)
-            for number in page_numbers:
+            for number in target.pages or []:
                 if not 0 <= number < pdf.page_count:
                     raise ValueError(f"Page {number} is out of range (document has {pdf.page_count} pages)")
-                page = pdf[number]
-                pattern = compile_text_pattern(
-                    target.values, ignore_case=target.ignore_case, partial_match=target.partial_match
-                )
-                text, positions, styles = _text_index_with_styles(page)
-                for match in pattern.finditer(text):
-                    if match.start() == match.end():
-                        continue
+        for number in range(pdf.page_count):
+            selected = [target for target in targets if target.pages is None or number in target.pages]
+            if not selected:
+                continue
+            page = pdf[number]
+            text, positions, styles = _text_index_with_styles(page)
+            characters: list[_RenderableCharacter] | None = None
+            redactions: list[tuple[fitz.Quad, tuple[float, float, float]]] = []
+            restorations: list[_RenderableCharacter] = []
+            target_indices: set[int] = set()
+            insertions: list[tuple[fitz.Quad, str, _TextStyle]] = []
+            backgrounds: dict[tuple[float, float, float, float], tuple[float, float, float]] = {}
+            for target in selected:
+                for match in find_text_matches(
+                    text,
+                    target.values,
+                    ignore_case=target.ignore_case,
+                    partial_match=target.partial_match,
+                ):
                     original = match.group()
-                    replacement = replacement_text(original, target)
-                    rects = _match_rectangles(match, positions)
+                    replacement = context.replacement_text(original, target)
+                    regions = _match_regions(match, positions)
                     matched_styles = _match_styles(match, positions, styles)
-                    values = _replacement_lines(original, replacement, target.replacement_type == "STATIC")
-                    match_values = [replacement] if len(rects) == 1 else values
-                    for rect, value, style in zip(rects, match_values, matched_styles):
-                        page.add_redact_annot(rect, fill=style.background if style.background is not None else False)
-                        insertions.append((number, rect, value, style))
-        # Applying annotations removes the original content from the PDF content stream.
-        for page in pdf:
-            page.apply_redactions()
-        for page_number, rect, value, style in insertions:
-            _insert(pdf[page_number], rect, value, style)
-        output = pdf.tobytes(garbage=4, deflate=True)
+                    line_values = _replacement_lines(original, replacement, target.replacement_type == "STATIC")
+                    line_groups: list[list[int]] = []
+                    last_line: int | None = None
+                    for index, region in enumerate(regions):
+                        position = positions[min(region.text_indices)]
+                        line = position.line if position is not None else -1
+                        if line != last_line:
+                            line_groups.append([])
+                            last_line = line
+                        line_groups[-1].append(index)
+                    for line_index, group in enumerate(line_groups):
+                        if line_index >= len(line_values) or group[0] >= len(matched_styles):
+                            continue
+                        first_quad = regions[group[0]].text_quad
+                        last_quad = regions[group[-1]].text_quad
+                        whole_line = fitz.Quad(first_quad.ul, last_quad.ur, first_quad.ll, last_quad.lr)
+                        insertions.append((whole_line, line_values[line_index], matched_styles[group[0]]))
+                    for index, region in enumerate(regions):
+                        style = matched_styles[index] if index < len(matched_styles) else None
+                        if characters is None:
+                            characters = _renderable_characters(page)
+                        target_indices.update(region.text_indices)
+                        restorations.extend(
+                            _restoration_candidates(characters, region.quad, region.text_indices)
+                        )
+                        sample_rect = style.span_bbox if style is not None and style.span_bbox is not None else region.quad.rect
+                        background_key = tuple(sample_rect)
+                        if background_key not in backgrounds:
+                            backgrounds[background_key] = _background_color(page, sample_rect)
+                        background = backgrounds[background_key]
+                        redactions.append((region.quad, background))
+                        page.add_redact_annot(region.quad, fill=None, cross_out=False)
+            if redactions:
+                # Applying annotations removes the source from the content stream.
+                page.apply_redactions()
+                for quad, background in redactions:
+                    _fill(page, quad, background, 1.0)
+                _restore_characters(page, restorations, target_indices)
+                for quad, value, style in insertions:
+                    _insert(page, quad, value, style)
+            del text, positions, styles, characters
+        if output_path is not None:
+            pdf.save(output_path, garbage=4, deflate=True)
+            output = b""
+        else:
+            output = pdf.tobytes(garbage=4, deflate=True)
     finally:
         pdf.close()
     filename = Path(document.filename or "document.pdf")

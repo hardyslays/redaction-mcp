@@ -1,103 +1,117 @@
 # Redaction-MCP
 
-## Introduction
-Redaction-MCP is a document redaction that can be used for Sensitive Data Redaction and Sensitive Data Replacement capabilities for a wide range of documents.
+Redaction-MCP provides document redaction, synthetic data replacement, and
+bounded text inspection through FastAPI and MCP. It supports PDF, DOCX,
+PPTX/PPTM, TXT, CSV, and XLSX documents.
 
-It is primarily designed to be used by AI agents via MCP adapters to provide document redaction and scrubbing capabilities to intelligent document processing systems using AI agents or agentic workflows.
+## Install
 
-
-## Scope of the project
-
-This project is aimed to be made into a full-fledged document "Sensitive Data Protection" MCP suite focused on inspection, de-identification and de-sensitization of documents. 
-It will support various document formats such as PDF, PPT, DOCX, TXT, etc. The scope of this MCP server is to provide SDP functionalities to the AI agents and Agentic workflows.
-
-ALso, A VERY IMPROTANT NOTE is that while this project is quite good at providing said capabilities to AI agents, but when talking about production-scenario, organisations often require much specific and customized capabilities which is out of scope of this project. 
-
-If you are going to build a SDP tool-set or suite of enterprise level, I would suggest creating a custom capabilities pipeline, as they often see a lot more success than generic SDP suites.
-
-## Requirements
-
-- Python 3.12 or newer
-- [uv](https://docs.astral.sh/uv/) (recommended) or a Python environment with
-  the dependencies installed
-
-## How to run the server
-There are two methods exposed for MCP server - STDIO and HTTP modes.
-
-### MCP over STDIO
-
-Use this when an MCP client launches Redaction-MCP as a local subprocess:
+Python 3.12 or newer is required.
 
 ```bash
-uv run redaction-mcp-stdio
+python -m pip install redaction-mcp
 ```
 
-For example, an MCP client command can use:
-
-```json
-{
-  "command": "uv",
-  "args": ["run", "--directory", "/absolute/path/to/redaction-mcp", "redaction-mcp-stdio"]
-}
-```
-
-The server provides one tool, `redact`, with the same request and response
-schema as the FastAPI API.
-
-### MCP over HTTP
-
-Start the streamable HTTP MCP server:
+For optional English name and place inference, install the NLP extra and its
+small pipeline. The server never downloads a model at runtime.
 
 ```bash
-uv run redaction-mcp-http
+python -m pip install "redaction-mcp[nlp]"
+python -m spacy download en_core_web_sm
 ```
 
-It listens on `127.0.0.1:8000` by default and exposes MCP at `/mcp`. Configure
-the bind address or port with `MCP_HOST` and `MCP_PORT`:
+For a source checkout, either run `uv sync --extra dev` or install
+`requirements.txt` followed by `python -m pip install -e .`.
+
+## Run
+
+The installed console commands work from any directory:
 
 ```bash
-MCP_HOST=0.0.0.0 MCP_PORT=8000 uv run redaction-mcp-http
+redaction-mcp-stdio
+redaction-mcp-http
+redaction-fastapi
 ```
 
-## Development setup
-Install the application and development dependencies:
+Use `MCP_HOST`, `MCP_PORT`, and `MCP_AUTH_TOKEN` to configure MCP HTTP. Use
+`FASTAPI_HOST`, `FASTAPI_PORT`, and `FASTAPI_AUTH_TOKEN` for FastAPI. A bearer
+token is required when either HTTP service binds to a non-loopback address.
+
+## Direct processing
+
+FastAPI exposes `POST /redact` and `POST /replace`. MCP exposes `redact`,
+`replace`, and `inspect_document`. Direct requests carry document content in
+`base64data` and are limited to 16 MiB decoded.
+
+Literal matching applies Unicode NFKC normalization, collapses whitespace,
+deduplicates findings, prefers longer findings, and uses Unicode-aware word
+boundaries. Set `partial_match` to allow a finding inside a larger word.
+
+Replacement supports `PARTIAL`, `STATIC`, `REGEX`, and `SEMANTIC`. Semantic
+targets may provide `entity_type`, including `NAME`, `EMAIL`, `PHONE`, `SSN`,
+`CREDIT_CARD`, `ADDRESS`, `ZIPCODE`, `DATE`, and `PLACE`. Structured types are
+inferred without a model; the optional spaCy pipeline improves English name
+and place inference.
+
+## Large-file jobs
+
+FastAPI provides this durable workflow:
+
+1. `POST /uploads` with `filename`, optional `mime_type`, and `size_bytes`.
+2. `PUT /uploads/{id}/chunks/{index}` with sequential raw chunks up to 1 MiB.
+3. `POST /jobs` with `upload_id`, `operation`, `targets`, and optional redaction
+   `options`.
+4. Poll `GET /jobs/{id}` and download binary ranges from
+   `GET /jobs/{id}/result?offset=0&limit=1048576`.
+5. `DELETE /jobs/{id}` when the result is no longer needed.
+
+MCP provides equivalent `create_upload`, `upload_chunk`, `submit_job`,
+`get_job`, `get_result_chunk`, and `delete_job` tools. MCP chunks use base64.
+
+Jobs and files are stored in `~/.redaction-mcp` by default. Set
+`REDACTION_STORAGE_PATH`, `REDACTION_JOB_WORKERS`, and
+`REDACTION_JOB_RETENTION_SECONDS` to configure storage, concurrency, and
+retention. PDF and CSV uploads are limited to 512 MiB. DOCX, PPTX/PPTM, and
+XLSX uploads are limited to 32 MiB and checked for unsafe archive expansion.
+TXT and unrecognized formats retain the 16 MiB direct-processing limit.
+
+## Development
 
 ```bash
 uv sync --extra dev
-```
-
-Run the test suite:
-
-```bash
 uv run python -m pytest --cov=src --cov-report=html
+uv build
 ```
 
-Start the Fast API server on port 8080:
+See [DEVELOPMENT.md](DEVELOPMENT.md) for request schemas and implementation
+details.
+
+## Publishing
+
+The [PyPI workflow](.github/workflows/publish-to-pypi.yml) runs the tests,
+builds and checks the distributions, then publishes them when a pull request
+is merged into a `release-<major>.<minor>.<patch>` branch. The branch version
+must match `pyproject.toml`. It uses PyPI Trusted Publishing, so no PyPI API
+token is needed.
+
+Before the first release, create a GitHub environment named `pypi` with a
+deployment branch rule for `release-*`. In the existing
+[redaction-mcp PyPI project](https://pypi.org/manage/project/redaction-mcp/publishing/),
+add a GitHub Actions Trusted Publisher with owner `hardyslays`, repository
+`redaction-mcp`, workflow filename `publish-to-pypi.yml`, and environment
+`pypi`.
+
+For each release, set a new, unused version in `pyproject.toml` and create a
+matching branch from `main` (for example, `release-0.2.0` for version `0.2.0`):
 
 ```bash
-uv run redaction-fastapi
+git switch main
+git pull --ff-only origin main
+git switch -c release-0.2.0
+git push -u origin release-0.2.0
 ```
-\- or -
-```bash
-python -m uvicorn src.server.main:app --port 8080
-```
 
-
-Once running, interactive OpenAPI documentation is available at
-`http://127.0.0.1:8080/docs`.
-
-Endpoints:
-
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/health` | Liveness check, returning `{"status":"ok"}`. |
-| `POST` | `/redact` | Redact a PDF and return the result as base64. |
-
-- Note - Also check DEVELOPMENT.md for more information on the porject development.
-
-## Questions?
-- If you have any questions or need any improvements/bug fixes, please raise a new GitHub issue stating the context.
-- I'll try to follow up as soon as I can, but it may still be not very fast for some people. Please gimme time, `me slow` :)
-
----
-### Happy Coding!!!
+The branch must already contain the workflow. Open a pull request targeting
+that release branch and merge it when ready. Creating the branch alone does not
+publish. Publish only once from each release branch; PyPI does not permit
+uploading the same version again.

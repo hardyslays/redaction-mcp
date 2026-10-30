@@ -12,8 +12,9 @@ class TextReplacementTarget(BaseModel):
 
     type: Literal["text"]
     values: list[str] = Field(min_length=1)
-    replacement_type: Literal["PARTIAL", "STATIC", "REGEX"]
+    replacement_type: Literal["PARTIAL", "STATIC", "REGEX", "SEMANTIC"]
     static_text: str | None = None
+    entity_type: str | None = None
     pages: list[Annotated[int, Field(ge=0)]] | None = None
     ignore_case: bool = False
     partial_match: bool = False
@@ -24,6 +25,8 @@ class TextReplacementTarget(BaseModel):
             raise ValueError("static_text is required when replacement_type is STATIC")
         if self.replacement_type != "STATIC" and self.static_text is not None:
             raise ValueError("static_text is only valid when replacement_type is STATIC")
+        if self.entity_type is not None and self.replacement_type != "SEMANTIC":
+            raise ValueError("entity_type is only valid when replacement_type is SEMANTIC")
         return self
 
 
