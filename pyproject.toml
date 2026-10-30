@@ -1,6 +1,6 @@
 [project]
 name = "redaction-mcp"
-version = "0.2.0"
+version = "1.0.0"
 description = "A MCP server library to provide Document Redaction and Data replacement capabilities to AI Agents"
 readme = "README.md"
 requires-python = ">=3.12"
