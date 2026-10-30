@@ -102,13 +102,13 @@ add a GitHub Actions Trusted Publisher with owner `hardyslays`, repository
 `pypi`.
 
 For each release, set a new, unused version in `pyproject.toml` and create a
-matching branch from `main` (for example, `release-0.2.0` for version `0.2.0`):
+matching branch from `main` (for example, `release-1.0.0` for version `1.0.0`):
 
 ```bash
 git switch main
 git pull --ff-only origin main
-git switch -c release-0.2.0
-git push -u origin release-0.2.0
+git switch -c release-1.0.0
+git push -u origin release-1.0.0
 ```
 
 The branch must already contain the workflow. Open a pull request targeting
