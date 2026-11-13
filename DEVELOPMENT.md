@@ -32,6 +32,17 @@ uv sync --extra dev
 uv run python -m pytest --cov=src --cov-report=html
 ```
 
+Without `uv`, install `requirements.txt` and then run
+`python -m pip install -e .` from the source checkout.
+
+For optional English name and place inference, install the NLP extra and its
+small spaCy pipeline. The server does not download a model at runtime.
+
+```bash
+python -m pip install "redaction-mcp[nlp]"
+python -m spacy download en_core_web_sm
+```
+
 The tests are organized by transport and service behavior:
 
 - `tests/test_fastapi.py` verifies the HTTP API.
@@ -273,9 +284,15 @@ poll its status, and download result ranges. FastAPI exposes `/uploads` and
 SQLite and files are kept under `REDACTION_STORAGE_PATH` for 24 hours by
 default. PDF jobs use file-backed PyMuPDF processing one page at a time, and
 CSV jobs stream rows.
+PDF and CSV uploads are limited to 512 MiB.
 Office files remain bounded by a 32 MiB input limit and archive expansion
 checks because their structure-preserving editors load the package in memory.
 TXT jobs retain the 16 MiB direct-processing limit.
+
+Jobs and files are stored in `~/.redaction-mcp` by default. Set
+`REDACTION_STORAGE_PATH`, `REDACTION_JOB_WORKERS`, and
+`REDACTION_JOB_RETENTION_SECONDS` to change storage, worker count, and
+retention.
 
 ## Running transports
 
@@ -292,7 +309,9 @@ redaction-mcp-http
 
 Set `MCP_HOST` and `MCP_PORT` to configure the HTTP MCP bind address and port.
 Set `MCP_AUTH_TOKEN` as well when binding outside loopback; MCP clients then
-send it as a bearer token. The FastAPI application provides `GET /health`,
+send it as a bearer token. `FASTAPI_HOST`, `FASTAPI_PORT`, and
+`FASTAPI_AUTH_TOKEN` control the FastAPI server in the same way. The FastAPI
+application provides `GET /health`,
 `POST /redact`, and `POST /replace`. MCP exposes corresponding `redact` and
 `replace` tools, plus `inspect_document` for selecting targets.
 
