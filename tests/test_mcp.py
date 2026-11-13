@@ -243,6 +243,7 @@ def test_http_mcp_bearer_token_protects_the_endpoint() -> None:
 
 def test_http_mcp_requires_token_for_non_loopback_bind(monkeypatch: pytest.MonkeyPatch) -> None:
     launcher = importlib.import_module("redaction_mcp.mcp.main")
+    monkeypatch.setattr(sys, "argv", ["redaction-mcp-http"])
     monkeypatch.setenv("MCP_HOST", "0.0.0.0")
     monkeypatch.delenv("MCP_AUTH_TOKEN", raising=False)
 

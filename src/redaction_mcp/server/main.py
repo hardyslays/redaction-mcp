@@ -1,5 +1,6 @@
 """FastAPI application exposing direct and durable document processing."""
 
+import argparse
 import os
 import uvicorn
 
@@ -110,7 +111,14 @@ async def delete_job(job_id: str) -> DeleteResult:
 
 def main() -> None:
     """Entry point for the ``redaction-fastapi`` command."""
+    parser = argparse.ArgumentParser(description="Run the FastAPI server")
+    parser.add_argument(
+        "--port", type=int, default=os.getenv("FASTAPI_PORT", "8080"), help="Listening port (overrides FASTAPI_PORT)"
+    )
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
     host = os.getenv("FASTAPI_HOST", "127.0.0.1")
     if host not in {"127.0.0.1", "::1", "localhost"} and not os.getenv("FASTAPI_AUTH_TOKEN"):
         raise RuntimeError("FASTAPI_AUTH_TOKEN is required when FASTAPI_HOST is not a loopback address")
-    uvicorn.run("redaction_mcp.server.main:app", host=host, port=int(os.getenv("FASTAPI_PORT", "8080")))
+    uvicorn.run("redaction_mcp.server.main:app", host=host, port=args.port)
