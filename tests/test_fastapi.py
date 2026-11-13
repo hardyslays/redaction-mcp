@@ -1,6 +1,7 @@
 import base64
 import asyncio
 import importlib
+import sys
 import threading
 import time
 
@@ -39,6 +40,7 @@ def test_health() -> None:
 
 
 def test_fastapi_requires_token_for_non_loopback_bind(monkeypatch) -> None:
+    monkeypatch.setattr(sys, "argv", ["redaction-fastapi"])
     monkeypatch.setenv("FASTAPI_HOST", "0.0.0.0")
     monkeypatch.delenv("FASTAPI_AUTH_TOKEN", raising=False)
 

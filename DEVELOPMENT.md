@@ -299,18 +299,24 @@ retention.
 ```bash
 # FastAPI: http://127.0.0.1:8080/docs
 redaction-fastapi
+# Use a different FastAPI port
+redaction-fastapi --port 9090
 
 # MCP launched as a local subprocess
 redaction-mcp-stdio
 
 # Streamable HTTP MCP: http://127.0.0.1:8000/mcp
 redaction-mcp-http
+# Use a different MCP HTTP port
+redaction-mcp-http --port 9000
 ```
 
 Set `MCP_HOST` and `MCP_PORT` to configure the HTTP MCP bind address and port.
+`--port` overrides `MCP_PORT` for a single run.
 Set `MCP_AUTH_TOKEN` as well when binding outside loopback; MCP clients then
 send it as a bearer token. `FASTAPI_HOST`, `FASTAPI_PORT`, and
-`FASTAPI_AUTH_TOKEN` control the FastAPI server in the same way. The FastAPI
+`FASTAPI_AUTH_TOKEN` control the FastAPI server in the same way; its `--port`
+option overrides `FASTAPI_PORT`. The FastAPI
 application provides `GET /health`,
 `POST /redact`, and `POST /replace`. MCP exposes corresponding `redact` and
 `replace` tools, plus `inspect_document` for selecting targets.

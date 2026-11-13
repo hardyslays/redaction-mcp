@@ -1,5 +1,6 @@
 """Run the MCP server in streamable HTTP mode."""
 
+import argparse
 import os
 import uvicorn
 from redaction_mcp.mcp.server import create_mcp_app
@@ -16,6 +17,13 @@ def _is_loopback(host: str) -> bool:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(description="Run the MCP HTTP server")
+    parser.add_argument(
+        "--port", type=int, default=os.getenv("MCP_PORT", "8000"), help="Listening port (overrides MCP_PORT)"
+    )
+    args = parser.parse_args()
+    if not 1 <= args.port <= 65535:
+        parser.error("port must be between 1 and 65535")
     host = os.getenv("MCP_HOST", "127.0.0.1")
     auth_token = os.getenv("MCP_AUTH_TOKEN")
     if not _is_loopback(host) and not auth_token:
@@ -23,7 +31,7 @@ def main() -> None:
     uvicorn.run(
         create_mcp_app(auth_token),
         host=host,
-        port=int(os.getenv("MCP_PORT", "8000")),
+        port=args.port,
     )
 
 

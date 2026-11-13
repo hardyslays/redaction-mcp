@@ -8,7 +8,7 @@ Find sensitive text in a document, then **permanently redact it** or **replace i
 
 In the ChatGPT session, the agent identified the invoice fields, used Redaction MCP to remove them, verified the output, and returned the updated PDF. The metadata cleanup shown in the chat was a separate step performed by the agent.
 
-![ChatGPT conversation showing an agent using Redaction MCP to redact invoice fields, check the PDF, and return the finished file](docs/images/chat_session.png)
+![ChatGPT conversation showing an agent using Redaction MCP to redact invoice fields, check the PDF, and return the finished file](https://raw.githubusercontent.com/hardyslays/redaction-mcp/main/docs/images/chat_session.png)
 
 ## See it work
 
@@ -16,13 +16,13 @@ In this sample invoice, the invoice number, date, and product quantities are rem
 
 | Before | After redaction |
 | :---: | :---: |
-| ![Sample invoice showing number 1213, date 16.12.2021, and product quantities 222 and 34](docs/images/invoice-before.png) | ![Same invoice with those four values covered by black redaction bars](docs/images/invoice-after.png) |
+| ![Sample invoice showing number 1213, date 16.12.2021, and product quantities 222 and 34](https://raw.githubusercontent.com/hardyslays/redaction-mcp/main/docs/images/invoice-before.png) | ![Same invoice with those four values covered by black redaction bars](https://raw.githubusercontent.com/hardyslays/redaction-mcp/main/docs/images/invoice-after.png) |
 
 The PDF engine also handles text at an angle, text that overlaps other text, and colored text. Replacement removes the original value and inserts a new one.
 
 | Before | After redaction or replacement |
 | :---: | :---: |
-| ![Examples of rotated text, overlapping text, blue text on a colored background, and code AB-129](docs/images/features-before.png) | ![Rotated and colored text redacted, overlapping K preserved, and AB-129 replaced with BC-230](docs/images/features-after.png) |
+| ![Examples of rotated text, overlapping text, blue text on a colored background, and code AB-129](https://raw.githubusercontent.com/hardyslays/redaction-mcp/main/docs/images/features-before.png) | ![Rotated and colored text redacted, overlapping K preserved, and AB-129 replaced with BC-230](https://raw.githubusercontent.com/hardyslays/redaction-mcp/main/docs/images/features-after.png) |
 
 The images above are sample PDFs processed by this project. In the last row, `AB-129` becomes `BC-230` using the `REGEX` replacement mode.
 
@@ -38,9 +38,11 @@ Start the MCP server in HTTP mode:
 
 ```bash
 redaction-mcp-http
+# Choose a different port when needed:
+redaction-mcp-http --port 9000
 ```
 
-Local MCP clients can connect to `http://127.0.0.1:8000/mcp`. For a client that launches its own server process, use `redaction-mcp-stdio`. To use ChatGPT, make the HTTP endpoint available at a reachable HTTPS URL and add that URL as an MCP connection.
+Local MCP clients can connect to `http://127.0.0.1:8000/mcp` by default, or `http://127.0.0.1:9000/mcp` with the example above. For a client that launches its own server process, use `redaction-mcp-stdio`. To use ChatGPT, make the HTTP endpoint available at a reachable HTTPS URL and add that URL as an MCP connection.
 
 Then attach a document and ask, for example:
 
