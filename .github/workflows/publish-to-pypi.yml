@@ -20,7 +20,7 @@ jobs:
           ref: ${{ github.sha }}
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.12.8"
+          python-version: "3.12"
       - name: Check release branch and version
         env:
           RELEASE_BRANCH: ${{ github.event.pull_request.base.ref }}
