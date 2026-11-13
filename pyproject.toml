@@ -47,6 +47,7 @@ include = ["redaction_mcp*"]
 
 [dependency-groups]
 dev = [
+    "pyinstaller>=6.17,<7",
     "twine>=7.0.0",
 ]
 
